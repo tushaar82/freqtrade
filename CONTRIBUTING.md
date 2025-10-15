@@ -4,7 +4,7 @@
 
 Feel like our bot is missing a feature? We welcome your pull requests! 
 
-Issues labeled [good first issue](https://github.com/freqtrade/freqtrade/labels/good%20first%20issue) can be good first contributions, and will help get you familiar with the codebase.
+Issues labeled [good  issue](https://github.com/freqtrade/freqtrade/labels/good%20first%20issue) can be good first contributions, and will help get you familiar with the codebase.
 
 Few pointers for contributions:
 
