@@ -1,0 +1,119 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "max_open_trades": 5,
+    "stake_currency": "INR",
+    "stake_amount": 10000,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "INR",
+    "timeframe": "5m",
+    "dry_run": false,
+    "cancel_open_orders_on_exit": false,
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "paperbroker",
+        "key": "",
+        "secret": "",
+        "initial_balance": 100000,
+        "slippage_percent": 0.05,
+        "commission_percent": 0.1,
+        "fill_probability": 0.95,
+        "proxy_exchange": null,
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "RELIANCE/INR",
+            "TCS/INR",
+            "INFY/INR",
+            "HDFCBANK/INR",
+            "ICICIBANK/INR",
+            "SBIN/INR",
+            "BHARTIARTL/INR",
+            "ITC/INR",
+            "KOTAKBANK/INR",
+            "LT/INR"
+        ],
+        "pair_blacklist": []
+    },
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "force_exit": "market",
+        "force_entry": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": false
+    },
+    "order_time_in_force": {
+        "entry": "GTC",
+        "exit": "GTC"
+    },
+    "telegram": {
+        "enabled": false,
+        "token": "your_telegram_token",
+        "chat_id": "your_telegram_chat_id"
+    },
+    "api_server": {
+        "enabled": false,
+        "listen_ip_address": "127.0.0.1",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "jwt_secret_key": "somethingrandom",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "SuperSecurePassword"
+    },
+    "bot_name": "freqtrade_paper",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "internals": {
+        "process_throttle_secs": 5
+    },
+    "strategy": "NSESampleStrategy",
+    "paperbroker_settings": {
+        "comment": "Paper Broker - Virtual trading for testing and development",
+        "features": {
+            "no_real_money": true,
+            "realistic_simulation": true,
+            "configurable_slippage": true,
+            "configurable_commission": true,
+            "trade_history_tracking": true
+        },
+        "settings": {
+            "initial_balance": "Starting virtual balance (default: 100000)",
+            "slippage_percent": "Simulated slippage percentage (default: 0.05%)",
+            "commission_percent": "Trading commission percentage (default: 0.1%)",
+            "fill_probability": "Probability of order fill (default: 0.95)",
+            "proxy_exchange": "Optional real exchange for market data (e.g., 'binance')"
+        },
+        "use_cases": [
+            "Strategy development and testing",
+            "Learning algorithmic trading",
+            "Backtesting validation",
+            "Risk-free experimentation",
+            "Educational purposes"
+        ]
+    }
+}

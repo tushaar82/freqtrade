@@ -1,0 +1,113 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "max_open_trades": 3,
+    "stake_currency": "INR",
+    "stake_amount": 10000,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "INR",
+    "timeframe": "5m",
+    "dry_run": true,
+    "cancel_open_orders_on_exit": false,
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "smartapi",
+        "key": "your_smartapi_key",
+        "username": "your_client_code",
+        "password": "your_pin",
+        "totp_token": "your_totp_qr_value",
+        "nse_exchange": "NSE",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "SBIN/INR",
+            "RELIANCE/INR",
+            "TCS/INR",
+            "INFY/INR",
+            "HDFCBANK/INR",
+            "ICICIBANK/INR",
+            "KOTAKBANK/INR",
+            "AXISBANK/INR",
+            "BHARTIARTL/INR",
+            "ITC/INR",
+            "LT/INR",
+            "WIPRO/INR",
+            "MARUTI/INR",
+            "TATAMOTORS/INR",
+            "TATASTEEL/INR"
+        ],
+        "pair_blacklist": []
+    },
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "force_exit": "market",
+        "force_entry": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": false
+    },
+    "order_time_in_force": {
+        "entry": "DAY",
+        "exit": "DAY"
+    },
+    "telegram": {
+        "enabled": false,
+        "token": "your_telegram_token",
+        "chat_id": "your_telegram_chat_id"
+    },
+    "api_server": {
+        "enabled": false,
+        "listen_ip_address": "127.0.0.1",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "jwt_secret_key": "somethingrandom",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "SuperSecurePassword"
+    },
+    "bot_name": "freqtrade_smartapi",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "internals": {
+        "process_throttle_secs": 5
+    },
+    "strategy": "NSESampleStrategy",
+    "smartapi_settings": {
+        "comment": "SmartAPI (Angel One) configuration for NSE trading",
+        "totp_setup": "Get TOTP token from Angel One app > Settings > 2FA > QR Code",
+        "product_types": {
+            "INTRADAY": "MIS - Margin Intraday Square-off",
+            "DELIVERY": "CNC - Cash and Carry",
+            "MARGIN": "NRML - Normal for F&O"
+        },
+        "order_types": {
+            "LIMIT": "Limit order",
+            "MARKET": "Market order",
+            "STOPLOSS_LIMIT": "Stop loss limit",
+            "STOPLOSS_MARKET": "Stop loss market"
+        }
+    }
+}
