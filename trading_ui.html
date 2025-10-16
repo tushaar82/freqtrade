@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Freqtrade - Indian Markets Trading UI</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            color: white;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            color: #e2e8f0;
+            font-size: 14px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .control-group label {
+            color: white;
+            font-size: 14px;
+        }
+        
+        select, input, button {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: none;
+            font-size: 14px;
+        }
+        
+        select, input {
+            background: rgba(255,255,255,0.1);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        button {
+            background: white;
+            color: #667eea;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(255,255,255,0.3);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #1e293b;
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid #334155;
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-3px);
+            border-color: #667eea;
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .stat-card .label {
+            color: #94a3b8;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #e2e8f0;
+        }
+        
+        .stat-card.profit .value {
+            color: #10b981;
+        }
+        
+        .stat-card.loss .value {
+            color: #ef4444;
+        }
+        
+        .chart-container {
+            background: #1e293b;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            border: 1px solid #334155;
+        }
+        
+        .chart-container h2 {
+            color: #e2e8f0;
+            font-size: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .chart-wrapper {
+            position: relative;
+            height: 500px;
+        }
+        
+        .chart-wrapper.small {
+            height: 300px;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #334155;
+        }
+        
+        .tab {
+            padding: 12px 24px;
+            background: transparent;
+            color: #94a3b8;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .tab:hover {
+            color: #e2e8f0;
+        }
+        
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .trades-table {
+            background: #1e293b;
+            border-radius: 15px;
+            padding: 25px;
+            border: 1px solid #334155;
+            overflow-x: auto;
+        }
+        
+        .trades-table h2 {
+            color: #e2e8f0;
+            margin-bottom: 20px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: #334155;
+            color: #e2e8f0;
+            padding: 12px;
+            text-align: left;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #334155;
+            color: #cbd5e1;
+        }
+        
+        tr:hover {
+            background: rgba(102, 126, 234, 0.1);
+        }
+        
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge.open {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .badge.closed {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .badge.profit {
+            background: #10b981;
+            color: white;
+        }
+        
+        .badge.loss {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .badge.options {
+            background: #f59e0b;
+            color: white;
+        }
+        
+        .badge.equity {
+            background: #8b5cf6;
+            color: white;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #94a3b8;
+        }
+        
+        .error {
+            background: #ef4444;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .options-info {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        
+        .options-badge {
+            background: rgba(245, 158, 11, 0.2);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #fbbf24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📈 Freqtrade - Indian Markets Trading UI</h1>
+            <p>Real-time candlestick charts, options trading, and performance analytics</p>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <label>Symbol:</label>
+                    <select id="symbolSelect">
+                        <option value="RELIANCE/INR">RELIANCE/INR</option>
+                        <option value="TCS/INR">TCS/INR</option>
+                        <option value="INFY/INR">INFY/INR</option>
+                        <option value="HDFCBANK/INR">HDFCBANK/INR</option>
+                        <option value="ICICIBANK/INR">ICICIBANK/INR</option>
+                        <option value="NIFTY25DEC24500CE/INR">NIFTY 24500 CE</option>
+                        <option value="NIFTY25DEC24500PE/INR">NIFTY 24500 PE</option>
+                        <option value="BANKNIFTY25DEC24500CE/INR">BANKNIFTY 24500 CE</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>Timeframe:</label>
+                    <select id="timeframeSelect">
+                        <option value="1m">1 Minute</option>
+                        <option value="5m" selected>5 Minutes</option>
+                        <option value="15m">15 Minutes</option>
+                        <option value="1h">1 Hour</option>
+                        <option value="4h">4 Hours</option>
+                        <option value="1d">1 Day</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>Candles:</label>
+                    <input type="number" id="candleLimit" value="100" min="10" max="500">
+                </div>
+                
+                <button onclick="loadChartData()">🔄 Refresh Chart</button>
+                <button onclick="loadAnalytics()">📊 Refresh Stats</button>
+            </div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Trades</div>
+                <div class="value" id="total-trades">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Open Trades</div>
+                <div class="value" id="open-trades">-</div>
+            </div>
+            <div class="stat-card profit">
+                <div class="label">Total Profit</div>
+                <div class="value" id="total-profit">₹0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Win Rate</div>
+                <div class="value" id="win-rate">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Current Balance</div>
+                <div class="value" id="current-balance">₹0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Options Trades</div>
+                <div class="value" id="options-trades">0</div>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('candlestick')">📊 Candlestick Chart</button>
+            <button class="tab" onclick="switchTab('equity')">💰 Equity Curve</button>
+            <button class="tab" onclick="switchTab('options')">🎯 Options Analytics</button>
+        </div>
+        
+        <div id="candlestick-tab" class="tab-content active">
+            <div class="chart-container">
+                <h2>📊 Candlestick Chart - <span id="chart-symbol">-</span></h2>
+                <div class="chart-wrapper">
+                    <canvas id="candlestickChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div id="equity-tab" class="tab-content">
+            <div class="chart-container">
+                <h2>💰 Equity Curve</h2>
+                <div class="chart-wrapper small">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <h2>📈 Daily Profit</h2>
+                <div class="chart-wrapper small">
+                    <canvas id="dailyProfitChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div id="options-tab" class="tab-content">
+            <div class="chart-container">
+                <h2>🎯 Options Trading Analytics</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="label">Total Options Trades</div>
+                        <div class="value" id="opt-total">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Call Options</div>
+                        <div class="value" id="opt-calls">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">Put Options</div>
+                        <div class="value" id="opt-puts">0</div>
+                    </div>
+                    <div class="stat-card profit">
+                        <div class="label">Options P&L</div>
+                        <div class="value" id="opt-pnl">₹0</div>
+                    </div>
+                </div>
+                <div id="options-details" class="loading">Loading options data...</div>
+            </div>
+        </div>
+        
+        <div class="trades-table">
+            <h2>📊 Recent Trades</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Type</th>
+                        <th>Pair</th>
+                        <th>Status</th>
+                        <th>Open Date</th>
+                        <th>Duration</th>
+                        <th>Profit ₹</th>
+                        <th>Profit %</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="tradesBody">
+                    <tr><td colspan="9" class="loading">Loading trades...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script>
+        let candlestickChart, equityChart, dailyProfitChart;
+        const API_BASE = 'http://127.0.0.1:8080/api/v1';
+        
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            
+            if (tabName === 'options') {
+                loadOptionsAnalytics();
+            }
+        }
+        
+        // Fetch with auth
+        async function fetchWithAuth(url) {
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return await response.json();
+            } catch (error) {
+                console.error('Fetch error:', error);
+                return null;
+            }
+        }
+        
+        // Load candlestick chart data
+        async function loadChartData() {
+            const symbol = document.getElementById('symbolSelect').value;
+            const timeframe = document.getElementById('timeframeSelect').value;
+            const limit = document.getElementById('candleLimit').value;
+            
+            document.getElementById('chart-symbol').textContent = symbol;
+            
+            try {
+                // Fetch OHLCV data
+                const data = await fetchWithAuth(`${API_BASE}/pair_candles?pair=${symbol}&timeframe=${timeframe}&limit=${limit}`);
+                
+                if (data && data.data) {
+                    updateCandlestickChart(data.data, symbol);
+                } else {
+                    console.error('No chart data received');
+                }
+            } catch (error) {
+                console.error('Error loading chart data:', error);
+            }
+        }
+        
+        // Update candlestick chart
+        function updateCandlestickChart(ohlcvData, symbol) {
+            const ctx = document.getElementById('candlestickChart').getContext('2d');
+            
+            // Transform data for candlestick chart
+            const candleData = ohlcvData.map(candle => ({
+                x: candle[0], // timestamp
+                o: candle[1], // open
+                h: candle[2], // high
+                l: candle[3], // low
+                c: candle[4]  // close
+            }));
+            
+            if (candlestickChart) {
+                candlestickChart.destroy();
+            }
+            
+            candlestickChart = new Chart(ctx, {
+                type: 'candlestick',
+                data: {
+                    datasets: [{
+                        label: symbol,
+                        data: candleData,
+                        borderColor: {
+                            up: '#10b981',
+                            down: '#ef4444',
+                            unchanged: '#94a3b8'
+                        },
+                        backgroundColors: {
+                            up: 'rgba(16, 185, 129, 0.3)',
+                            down: 'rgba(239, 68, 68, 0.3)',
+                            unchanged: 'rgba(148, 163, 184, 0.3)'
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#e2e8f0'
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: '#1e293b',
+                            titleColor: '#e2e8f0',
+                            bodyColor: '#cbd5e1',
+                            borderColor: '#667eea',
+                            borderWidth: 1
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: 'minute'
+                            },
+                            ticks: {
+                                color: '#94a3b8'
+                            },
+                            grid: {
+                                color: '#334155'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#94a3b8'
+                            },
+                            grid: {
+                                color: '#334155'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Load analytics
+        async function loadAnalytics() {
+            try {
+                // Load status
+                const status = await fetchWithAuth(`${API_BASE}/status`);
+                const profit = await fetchWithAuth(`${API_BASE}/profit`);
+                const balance = await fetchWithAuth(`${API_BASE}/balance`);
+                
+                if (status) {
+                    const openTrades = status.filter(t => t.is_open).length;
+                    document.getElementById('total-trades').textContent = status.length;
+                    document.getElementById('open-trades').textContent = openTrades;
+                    
+                    // Count options trades
+                    const optionsTrades = status.filter(t => 
+                        t.instrument_type === 'CALL_OPTION' || t.instrument_type === 'PUT_OPTION'
+                    ).length;
+                    document.getElementById('options-trades').textContent = optionsTrades;
+                }
+                
+                if (profit) {
+                    const totalProfit = profit.profit_closed_coin || 0;
+                    const winRate = profit.winning_trades && profit.closed_trade_count 
+                        ? ((profit.winning_trades / profit.closed_trade_count) * 100).toFixed(1)
+                        : 0;
+                    
+                    document.getElementById('total-profit').textContent = `₹${totalProfit.toFixed(2)}`;
+                    document.getElementById('win-rate').textContent = `${winRate}%`;
+                    
+                    // Update profit card color
+                    const profitCard = document.getElementById('total-profit').parentElement;
+                    profitCard.classList.remove('profit', 'loss');
+                    profitCard.classList.add(totalProfit >= 0 ? 'profit' : 'loss');
+                }
+                
+                if (balance) {
+                    const total = balance.total || 0;
+                    document.getElementById('current-balance').textContent = `₹${total.toFixed(2)}`;
+                }
+                
+                // Load trades table
+                await loadTrades();
+                
+            } catch (error) {
+                console.error('Error loading analytics:', error);
+            }
+        }
+        
+        // Load trades
+        async function loadTrades() {
+            try {
+                const trades = await fetchWithAuth(`${API_BASE}/trades?limit=50`);
+                
+                if (trades && trades.trades) {
+                    const tbody = document.getElementById('tradesBody');
+                    tbody.innerHTML = '';
+                    
+                    trades.trades.forEach(trade => {
+                        const row = document.createElement('tr');
+                        
+                        const instrumentType = trade.instrument_type || 'EQUITY';
+                        const isOptions = instrumentType.includes('OPTION');
+                        const profitAbs = trade.profit_abs || 0;
+                        const profitPct = trade.profit_ratio ? (trade.profit_ratio * 100).toFixed(2) : '0.00';
+                        
+                        let optionsInfo = '';
+                        if (isOptions) {
+                            optionsInfo = `
+                                <div class="options-info">
+                                    <span class="options-badge">Strike: ₹${trade.strike_price || '-'}</span>
+                                    <span class="options-badge">${trade.option_type || '-'}</span>
+                                    <span class="options-badge">Lot: ${trade.lot_size || 1}</span>
+                                </div>
+                            `;
+                        }
+                        
+                        row.innerHTML = `
+                            <td>${trade.trade_id}</td>
+                            <td><span class="badge ${isOptions ? 'options' : 'equity'}">${instrumentType}</span></td>
+                            <td>${trade.pair}</td>
+                            <td><span class="badge ${trade.is_open ? 'open' : 'closed'}">${trade.is_open ? 'Open' : 'Closed'}</span></td>
+                            <td>${new Date(trade.open_date).toLocaleString()}</td>
+                            <td>${trade.trade_duration || '-'} min</td>
+                            <td><span class="badge ${profitAbs >= 0 ? 'profit' : 'loss'}">₹${profitAbs.toFixed(2)}</span></td>
+                            <td>${profitPct}%</td>
+                            <td>${optionsInfo}</td>
+                        `;
+                        
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading trades:', error);
+            }
+        }
+        
+        // Load options analytics
+        async function loadOptionsAnalytics() {
+            try {
+                const status = await fetchWithAuth(`${API_BASE}/status`);
+                
+                if (status) {
+                    const optionsTrades = status.filter(t => 
+                        t.instrument_type === 'CALL_OPTION' || t.instrument_type === 'PUT_OPTION'
+                    );
+                    
+                    const calls = optionsTrades.filter(t => t.instrument_type === 'CALL_OPTION').length;
+                    const puts = optionsTrades.filter(t => t.instrument_type === 'PUT_OPTION').length;
+                    
+                    const optionsPnl = optionsTrades.reduce((sum, t) => sum + (t.profit_abs || 0), 0);
+                    
+                    document.getElementById('opt-total').textContent = optionsTrades.length;
+                    document.getElementById('opt-calls').textContent = calls;
+                    document.getElementById('opt-puts').textContent = puts;
+                    document.getElementById('opt-pnl').textContent = `₹${optionsPnl.toFixed(2)}`;
+                    
+                    // Update P&L card color
+                    const pnlCard = document.getElementById('opt-pnl').parentElement;
+                    pnlCard.classList.remove('profit', 'loss');
+                    pnlCard.classList.add(optionsPnl >= 0 ? 'profit' : 'loss');
+                    
+                    // Show details
+                    const detailsDiv = document.getElementById('options-details');
+                    if (optionsTrades.length > 0) {
+                        detailsDiv.innerHTML = '<h3 style="margin-bottom: 15px;">Active Options Positions</h3>';
+                        optionsTrades.filter(t => t.is_open).forEach(trade => {
+                            detailsDiv.innerHTML += `
+                                <div style="background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
+                                    <strong>${trade.pair}</strong> - ${trade.option_type} @ ₹${trade.strike_price}<br>
+                                    <small>Lot Size: ${trade.lot_size} | Entry: ₹${trade.open_rate} | Current P&L: ₹${(trade.profit_abs || 0).toFixed(2)}</small>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        detailsDiv.innerHTML = '<p>No options trades found.</p>';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading options analytics:', error);
+            }
+        }
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadChartData();
+            loadAnalytics();
+            
+            // Auto-refresh every 30 seconds
+            setInterval(() => {
+                loadChartData();
+                loadAnalytics();
+            }, 30000);
+        });
+    </script>
+</body>
+</html>

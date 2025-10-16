@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, List, Optional
 
 from pandas import DataFrame, to_datetime
 

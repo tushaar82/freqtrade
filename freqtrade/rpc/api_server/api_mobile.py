@@ -7,8 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from freqtrade.exceptions import OperationalException
-from freqtrade.rpc.api_server.api_auth import get_rpc_optional, validate_auth
-from freqtrade.rpc.api_server.deps import get_config
+from freqtrade.rpc.api_server.deps import get_config, get_rpc_optional
 from freqtrade.rpc.rpc import RPC, RPCException
 
 

@@ -146,6 +146,7 @@ class Paperbroker(Exchange):
         self._csv_data = {}  # pair -> DataFrame with OHLCV data
         self._csv_data_index = {}  # pair -> current playback index
         self._use_csv_data = False  # Flag to enable CSV data mode
+        self._current_csv_time = {}  # pair -> current simulation timestamp (for consistent pricing)
         
         # Initialize proxy exchange if specified
         self._proxy = None
@@ -247,15 +248,23 @@ class Paperbroker(Exchange):
                         continue
                     
                     # Convert to millisecond timestamps
+                    # Ensure datetime is timezone-aware and convert to milliseconds
+                    if df['datetime'].dt.tz is None:
+                        df['datetime'] = df['datetime'].dt.tz_localize('UTC')
                     df['timestamp'] = (df['datetime'].astype(int) // 10**6).astype(int)
                     
                     # Store data
                     self._csv_data[pair] = df
-                    self._csv_data_index[pair] = 0  # Start at beginning
+                    # Start index at a reasonable position (e.g., 500 candles in) to allow backfill
+                    # This ensures we have data to return when fetch_ohlcv is called
+                    self._csv_data_index[pair] = min(500, len(df))
                     
-                    # Initialize price cache with first price
+                    # Initialize price cache and current time with LATEST price (for live trading simulation)
+                    # This ensures ticker price matches the most recent candle in charts
                     if len(df) > 0:
-                        self._price_cache[pair] = float(df.iloc[0]['close'])
+                        last_idx = len(df) - 1
+                        self._price_cache[pair] = float(df.iloc[last_idx]['close'])
+                        self._current_csv_time[pair] = df.iloc[last_idx]['timestamp']
                     
                     logger.info(
                         f"Loaded {len(df)} candles for {pair} "
@@ -334,33 +343,29 @@ class Paperbroker(Exchange):
     def _simulate_price(self, pair: str, base_price: float | None = None) -> float:
         """
         Simulate a realistic price for a pair.
-        If CSV data available, use real data. Otherwise simulate.
+        If CSV data available, use the LATEST (most recent) price to match chart data.
+        This ensures ticker price matches the rightmost candle in FreqUI charts.
         
         :param pair: Trading pair
         :param base_price: Base price to simulate from
         :return: Simulated/real price
         """
-        # Use CSV data if available
+        # Use CSV data if available - return LATEST price for consistency with charts
         if self._use_csv_data and pair in self._csv_data:
             df = self._csv_data[pair]
-            idx = self._csv_data_index[pair]
             
-            # Get current candle
-            if idx < len(df):
-                current_candle = df.iloc[idx]
-                new_price = float(current_candle['close'])
-                self._price_cache[pair] = new_price
-                
-                # Advance to next candle (will be used next time)
-                self._csv_data_index[pair] = (idx + 1) % len(df)  # Loop back to start
-                
-                return new_price
+            # Always use the LATEST candle for current price
+            # This ensures ticker matches the most recent data shown in charts
+            if len(df) > 0:
+                last_idx = len(df) - 1
+                latest_price = float(df.iloc[last_idx]['close'])
+                self._price_cache[pair] = latest_price
+                return latest_price
             else:
                 # Shouldn't happen, but fallback
-                self._csv_data_index[pair] = 0
-                return float(df.iloc[0]['close'])
+                return self._price_cache.get(pair, 100.0)
         
-        # Fallback to random simulation
+        # Fallback to random simulation (when no CSV data)
         if pair in self._price_cache:
             last_price = self._price_cache[pair]
             # Random walk with 0.5% max movement
@@ -584,34 +589,43 @@ class Paperbroker(Exchange):
         df = self._csv_data[pair].copy()
         limit = limit or 100
         
-        # Get current index position
-        idx = self._csv_data_index[pair]
-        
-        # Return candles from current position backwards (for backfill)
-        # We want the most recent 'limit' candles up to current index
-        start_idx = max(0, idx - limit)
-        end_idx = idx
-        
-        # Get the slice
-        candle_slice = df.iloc[start_idx:end_idx]
+        # If 'since' is provided, filter data from that timestamp
+        if since:
+            # Filter dataframe to only include candles >= since
+            df = df[df['timestamp'] >= since]
+            
+            # Return up to 'limit' candles from the filtered data
+            candle_slice = df.iloc[:limit]
+        else:
+            # No 'since' provided - return the most recent 'limit' candles
+            # This is what FreqUI and backtesting expect
+            candle_slice = df.iloc[-limit:]
         
         # If we need to resample to different timeframe
         if timeframe != '1m':
             candle_slice = self._resample_candles(candle_slice, timeframe)
         
         # Convert to OHLCV list format
+        # Format: [timestamp_ms, open, high, low, close, volume]
         ohlcv = []
         for _, row in candle_slice.iterrows():
-            ohlcv.append([
-                int(row['timestamp']),
-                float(row['open']),
-                float(row['high']),
-                float(row['low']),
-                float(row['close']),
-                float(row['volume'])
-            ])
+            candle = [
+                int(row['timestamp']),  # Timestamp in milliseconds
+                float(row['open']),     # Open price
+                float(row['high']),     # High price
+                float(row['low']),      # Low price
+                float(row['close']),    # Close price
+                float(row['volume'])    # Volume
+            ]
+            ohlcv.append(candle)
         
-        logger.debug(f"Returning {len(ohlcv)} candles for {pair} ({timeframe}) from CSV data")
+        # Log sample data for debugging
+        if ohlcv:
+            logger.debug(
+                f"Returning {len(ohlcv)} candles for {pair} ({timeframe}) from CSV data. "
+                f"First candle: {ohlcv[0]}, Last candle: {ohlcv[-1]}"
+            )
+        
         return ohlcv
     
     def _resample_candles(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
@@ -622,8 +636,11 @@ class Paperbroker(Exchange):
         :param timeframe: Target timeframe (e.g., '5m', '15m')
         :return: Resampled DataFrame
         """
+        # Make a copy to avoid modifying original
+        df_copy = df.copy()
+        
         # Set datetime as index for resampling
-        df_resampled = df.set_index('datetime')
+        df_copy = df_copy.set_index('datetime')
         
         # Convert timeframe to pandas frequency
         freq_map = {
@@ -632,18 +649,24 @@ class Paperbroker(Exchange):
         }
         freq = freq_map.get(timeframe, '5T')
         
-        # Resample
-        resampled = df_resampled.resample(freq).agg({
+        # Resample with proper OHLC aggregation
+        resampled = df_copy.resample(freq).agg({
             'open': 'first',
             'high': 'max',
             'low': 'min',
             'close': 'last',
-            'volume': 'sum',
-            'timestamp': 'first'
+            'volume': 'sum'
         }).dropna()
         
-        # Reset index
+        # Reset index to get datetime back as column
         resampled = resampled.reset_index()
+        
+        # Recalculate timestamp from datetime
+        if resampled['datetime'].dt.tz is None:
+            resampled['datetime'] = resampled['datetime'].dt.tz_localize('UTC')
+        resampled['timestamp'] = (resampled['datetime'].astype(int) // 10**6).astype(int)
+        
+        logger.debug(f"Resampled {len(df_copy)} candles to {len(resampled)} {timeframe} candles")
         
         return resampled
 
@@ -665,13 +688,41 @@ class Paperbroker(Exchange):
         :param pair: Freqtrade pair
         :param ordertype: Order type ('limit', 'market')
         :param side: Order side ('buy', 'sell')
-        :param amount: Order amount
+        :param amount: Order amount (for options, this should be lot-size adjusted)
         :param rate: Order price (for limit orders)
         :param params: Additional parameters
         :param leverage: Leverage
         :param reduceOnly: Whether this is a reduce-only order (futures)
         :return: Order data
         """
+        # Validate lot size for options trading
+        from freqtrade.enums import InstrumentType
+        instrument_type = InstrumentType.from_symbol(pair)
+        
+        if instrument_type.requires_lot_size():
+            # Load lot size manager to validate quantity
+            try:
+                from freqtrade.data.lot_size_manager import LotSizeManager
+                lot_mgr = LotSizeManager(self._config)
+                lot_size = lot_mgr.get_lot_size(pair)
+                
+                # Validate that amount is a multiple of lot size
+                if amount % lot_size != 0:
+                    logger.warning(
+                        f"Order amount {amount} for {pair} is not a multiple of lot size {lot_size}. "
+                        f"Adjusting to {int(amount / lot_size) * lot_size}"
+                    )
+                    amount = int(amount / lot_size) * lot_size
+                    
+                if amount == 0:
+                    raise InvalidOrderException(
+                        f"Order amount too small for {pair} (lot size: {lot_size})"
+                    )
+                    
+                logger.info(f"Options order: {pair} amount={amount} (lots: {amount/lot_size})")
+            except ImportError:
+                logger.warning("LotSizeManager not available, skipping lot size validation")
+        
         # Generate order ID
         order_id = str(uuid.uuid4())
         
@@ -903,9 +954,43 @@ class Paperbroker(Exchange):
         self._trades = {}
         self._dry_run_open_orders = {}
         self._ohlcv_candle_cache = {}  # Cache for OHLCV data
+        
+        # Clear price cache and reload CSV data
+        self._price_cache = {}
+        self._current_csv_time = {}
+        self._csv_data = {}
+        self._csv_data_index = {}
+        self._use_csv_data = False
+        
         # Reinitialize markets
         self._init_markets()
-        logger.info("Paper Broker reset to initial state")
+        
+        # Reload CSV data with fresh data
+        self._load_csv_data()
+        
+        logger.info("Paper Broker reset to initial state with fresh CSV data")
+    
+    def clear_cache(self):
+        """Clear all caches and force reload of CSV data"""
+        logger.info("Clearing all caches and reloading CSV data...")
+        
+        # Clear all caches
+        self._ohlcv_candle_cache = {}
+        self._price_cache = {}
+        self._klines = {}
+        self._expiring_candle_cache = {}
+        self._fetch_tickers_cache.clear()
+        self._exit_rate_cache.clear()
+        self._entry_rate_cache.clear()
+        
+        # Reload CSV data
+        self._csv_data = {}
+        self._csv_data_index = {}
+        self._current_csv_time = {}
+        self._use_csv_data = False
+        self._load_csv_data()
+        
+        logger.info("✅ All caches cleared and CSV data reloaded")
 
     @property
     def name(self) -> str:
