@@ -1,0 +1,43 @@
+{
+  "lot_sizes": {
+    "indices": {
+      "NIFTY": 25,
+      "BANKNIFTY": 15,
+      "FINNIFTY": 40,
+      "MIDCPNIFTY": 75,
+      "NIFTYNEXT50": 25,
+      "SENSEX": 10,
+      "BANKEX": 15
+    },
+    "stocks": {
+      "RELIANCE": 250,
+      "TCS": 150,
+      "INFY": 300,
+      "HDFCBANK": 550,
+      "ICICIBANK": 700,
+      "SBIN": 1500,
+      "BHARTIARTL": 1200,
+      "ITC": 1600,
+      "KOTAKBANK": 400,
+      "LT": 225,
+      "WIPRO": 300,
+      "MARUTI": 100,
+      "TATAMOTORS": 1000,
+      "TATASTEEL": 800,
+      "AXISBANK": 600,
+      "BAJFINANCE": 125,
+      "BAJAJFINSV": 200,
+      "HINDUNILVR": 300,
+      "ASIANPAINT": 400,
+      "NESTLEIND": 50
+    }
+  },
+  "last_updated": "2025-10-15T00:00:00Z",
+  "revision_history": [
+    {
+      "date": "2025-10-15",
+      "changes": "Initial lot sizes for major NSE indices and stocks",
+      "source": "NSE official data"
+    }
+  ]
+}

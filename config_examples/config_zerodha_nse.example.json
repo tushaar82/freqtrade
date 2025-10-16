@@ -1,0 +1,135 @@
+{
+    "$schema": "https://schema.freqtrade.io/schema.json",
+    "max_open_trades": 3,
+    "stake_currency": "INR",
+    "stake_amount": 10000,
+    "tradable_balance_ratio": 0.99,
+    "fiat_display_currency": "INR",
+    "timeframe": "5m",
+    "dry_run": true,
+    "cancel_open_orders_on_exit": false,
+    "unfilledtimeout": {
+        "entry": 10,
+        "exit": 10,
+        "exit_timeout_count": 0,
+        "unit": "minutes"
+    },
+    "entry_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1,
+        "price_last_balance": 0.0,
+        "check_depth_of_market": {
+            "enabled": false,
+            "bids_to_ask_delta": 1
+        }
+    },
+    "exit_pricing": {
+        "price_side": "same",
+        "use_order_book": true,
+        "order_book_top": 1
+    },
+    "exchange": {
+        "name": "zerodha",
+        "key": "your_kite_api_key",
+        "secret": "your_kite_api_secret",
+        "redirect_url": "https://127.0.0.1:8080",
+        "request_token": "your_request_token_from_oauth",
+        "totp_token": "your_totp_secret_optional",
+        "nse_exchange": "NSE",
+        "ccxt_config": {},
+        "ccxt_async_config": {},
+        "pair_whitelist": [
+            "SBIN/INR",
+            "RELIANCE/INR",
+            "TCS/INR",
+            "INFY/INR",
+            "HDFCBANK/INR",
+            "ICICIBANK/INR",
+            "KOTAKBANK/INR",
+            "AXISBANK/INR",
+            "BHARTIARTL/INR",
+            "ITC/INR",
+            "LT/INR",
+            "WIPRO/INR",
+            "MARUTI/INR",
+            "TATAMOTORS/INR",
+            "TATASTEEL/INR",
+            "NIFTY25DEC24500CE/INR",
+            "NIFTY25DEC24500PE/INR",
+            "BANKNIFTY25DEC24500CE/INR",
+            "BANKNIFTY25DEC24500PE/INR"
+        ],
+        "pair_blacklist": []
+    },
+    "pairlists": [
+        {"method": "StaticPairList"}
+    ],
+    "order_types": {
+        "entry": "limit",
+        "exit": "limit",
+        "emergency_exit": "market",
+        "force_exit": "market",
+        "force_entry": "market",
+        "stoploss": "market",
+        "stoploss_on_exchange": false
+    },
+    "order_time_in_force": {
+        "entry": "GTC",
+        "exit": "GTC"
+    },
+    "telegram": {
+        "enabled": false,
+        "token": "your_telegram_token",
+        "chat_id": "your_telegram_chat_id"
+    },
+    "api_server": {
+        "enabled": false,
+        "listen_ip_address": "127.0.0.1",
+        "listen_port": 8080,
+        "verbosity": "error",
+        "jwt_secret_key": "somethingrandom",
+        "CORS_origins": [],
+        "username": "freqtrader",
+        "password": "SuperSecurePassword"
+    },
+    "bot_name": "freqtrade_zerodha",
+    "initial_state": "running",
+    "force_entry_enable": false,
+    "internals": {
+        "process_throttle_secs": 5
+    },
+    "strategy": "NSESampleStrategy",
+    "nse_trading": {
+        "market_hours": {
+            "open": "09:15",
+            "close": "15:30"
+        },
+        "product_type": "MIS"
+    },
+    "zerodha_settings": {
+        "comment": "Zerodha Kite Connect configuration for NSE trading",
+        "oauth_flow": "Visit login URL, authorize, extract request_token from redirect URL",
+        "session_management": "Tokens expire at 6 AM IST next day, daily re-authentication required",
+        "connect_plan": "Requires Kite Connect subscription (₹500/month) for data access",
+        "product_types": {
+            "MIS": "Margin Intraday Square-off",
+            "CNC": "Cash and Carry (Delivery)",
+            "NRML": "Normal (Overnight positions)"
+        },
+        "order_types": {
+            "LIMIT": "Limit order",
+            "MARKET": "Market order",
+            "SL": "Stop loss order",
+            "SL-M": "Stop loss market order"
+        },
+        "exchanges": {
+            "NSE": "National Stock Exchange (Equity)",
+            "NFO": "NSE Futures & Options",
+            "BSE": "Bombay Stock Exchange",
+            "BFO": "BSE Futures & Options"
+        },
+        "rate_limits": "3 requests per second, 1000 requests per minute",
+        "websocket": "Real-time data via KiteTicker WebSocket"
+    }
+}

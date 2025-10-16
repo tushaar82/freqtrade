@@ -9,6 +9,9 @@ technical==1.5.3
 
 ccxt==4.5.10
 cryptography==46.0.2
+kiteconnect>=4.0.0
+pyotp>=2.9.0
+scipy>=1.11.0
 aiohttp==3.13.0
 SQLAlchemy==2.0.44
 python-telegram-bot==22.5

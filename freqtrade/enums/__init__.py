@@ -4,6 +4,7 @@ from freqtrade.enums.candletype import CandleType
 from freqtrade.enums.exitchecktuple import ExitCheckTuple
 from freqtrade.enums.exittype import ExitType
 from freqtrade.enums.hyperoptstate import HyperoptState
+from freqtrade.enums.instrumenttype import InstrumentType
 from freqtrade.enums.marginmode import MarginMode
 from freqtrade.enums.marketstatetype import MarketDirection
 from freqtrade.enums.ordertypevalue import OrderTypeValues

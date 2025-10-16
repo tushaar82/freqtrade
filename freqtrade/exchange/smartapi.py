@@ -7,7 +7,7 @@ from typing import Any
 from pandas import DataFrame, to_datetime
 
 from freqtrade.constants import BuySell
-from freqtrade.enums import CandleType, MarginMode, TradingMode
+from freqtrade.enums import CandleType, InstrumentType, MarginMode, TradingMode
 from freqtrade.exceptions import (
     DDosProtection,
     ExchangeError,
@@ -204,6 +204,101 @@ class Smartapi(Exchange):
         logger.warning(f"Symbol token lookup not fully implemented for {trading_symbol}")
         return "0"  # Placeholder
 
+    def parse_options_symbol(self, symbol: str) -> dict:
+        """
+        Parse options symbol to extract components.
+        
+        :param symbol: Options symbol (e.g., 'NIFTY25DEC24500CE')
+        :return: Dict with strike, expiry, option_type, underlying
+        """
+        if not symbol.endswith(('CE', 'PE')):
+            return {}
+        
+        try:
+            # Extract option type (CE/PE)
+            option_type = 'CALL' if symbol.endswith('CE') else 'PUT'
+            base_symbol = symbol[:-2]  # Remove CE/PE
+            
+            # Extract strike price (last numeric part)
+            import re
+            strike_match = re.search(r'(\d+)$', base_symbol)
+            if not strike_match:
+                return {}
+            
+            strike_price = float(strike_match.group(1))
+            symbol_without_strike = base_symbol[:strike_match.start()]
+            
+            # Extract expiry date (format varies, e.g., 25DEC24, 2024DEC25)
+            expiry_match = re.search(r'(\d{1,2}[A-Z]{3}\d{2,4}|\d{4}[A-Z]{3}\d{1,2})$', symbol_without_strike)
+            if expiry_match:
+                expiry_str = expiry_match.group(1)
+                underlying = symbol_without_strike[:expiry_match.start()]
+                
+                # Parse expiry date
+                expiry_date = self._parse_expiry_date(expiry_str)
+            else:
+                underlying = symbol_without_strike
+                expiry_date = None
+            
+            return {
+                'underlying': underlying,
+                'strike_price': strike_price,
+                'expiry_date': expiry_date,
+                'option_type': option_type,
+                'symbol': symbol
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to parse options symbol {symbol}: {e}")
+            return {}
+
+    def _parse_expiry_date(self, expiry_str: str) -> Optional[datetime]:
+        """Parse expiry date string to datetime"""
+        try:
+            # Handle different formats
+            if len(expiry_str) == 7:  # 25DEC24
+                return datetime.strptime(expiry_str, '%d%b%y')
+            elif len(expiry_str) == 9:  # 2024DEC25
+                return datetime.strptime(expiry_str, '%Y%b%d')
+            else:
+                return None
+        except Exception:
+            return None
+
+    def get_options_instruments(self) -> List[dict]:
+        """
+        Fetch options instruments from Angel One (placeholder implementation).
+        
+        :return: List of options instruments
+        """
+        # This would fetch from Smart API's master data
+        # For now, return empty list
+        logger.warning("get_options_instruments not fully implemented for SmartAPI")
+        return []
+
+    def fetch_option_chain(self, underlying: str, expiry: str = None) -> List[dict]:
+        """
+        Fetch option chain for an underlying (placeholder implementation).
+        
+        :param underlying: Underlying symbol (e.g., 'NIFTY')
+        :param expiry: Expiry date (optional)
+        :return: List of option contracts
+        """
+        # This would need to be implemented based on Smart API's option chain endpoint
+        # For now, return empty list
+        logger.warning("fetch_option_chain not fully implemented for SmartAPI")
+        return []
+
+    def _get_lot_size(self, pair: str) -> int:
+        """Get lot size for a symbol"""
+        try:
+            # Try to get from LotSizeManager if available
+            if hasattr(self, '_lot_size_manager') and self._lot_size_manager:
+                return self._lot_size_manager.get_lot_size(pair)
+        except Exception:
+            pass
+        return 1  # Default lot size
+
     def fetch_ticker(self, pair: str) -> Ticker:
         """
         Fetch ticker data for a pair.
@@ -376,6 +471,15 @@ class Smartapi(Exchange):
         """
         trading_symbol, symbol_token, exchange = self._convert_symbol_to_smartapi(pair)
         params = params or {}
+        
+        # Check if this is an options trade and validate lot size
+        instrument_type = InstrumentType.from_symbol(pair)
+        if instrument_type.requires_lot_size():
+            # Validate quantity is in lot multiples
+            lot_size = self._get_lot_size(pair)
+            if amount % lot_size != 0:
+                logger.warning(f"Adjusting quantity {amount} to lot multiple for {pair} (lot size: {lot_size})")
+                amount = int(amount / lot_size) * lot_size
         
         # Map order type
         if ordertype == 'limit':

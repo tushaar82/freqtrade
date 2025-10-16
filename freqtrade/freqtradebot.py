@@ -21,6 +21,7 @@ from freqtrade.data.dataprovider import DataProvider
 from freqtrade.enums import (
     ExitCheckTuple,
     ExitType,
+    InstrumentType,
     MarginMode,
     RPCMessageType,
     SignalDirection,
@@ -1000,6 +1001,10 @@ class FreqtradeBot(LoggingMixin):
 
         # This is a new trade
         if trade is None:
+            # Determine instrument type and options metadata
+            instrument_type = InstrumentType.from_symbol(pair)
+            options_metadata = self._get_options_metadata(pair, instrument_type)
+            
             trade = Trade(
                 pair=pair,
                 base_currency=base_currency,
@@ -1026,6 +1031,13 @@ class FreqtradeBot(LoggingMixin):
                 precision_mode=self.exchange.precisionMode,
                 precision_mode_price=self.exchange.precision_mode_price,
                 contract_size=self.exchange.get_contract_size(pair),
+                # Options-specific fields
+                instrument_type=instrument_type.value,
+                strike_price=options_metadata.get('strike_price'),
+                expiry_date=options_metadata.get('expiry_date'),
+                option_type=options_metadata.get('option_type'),
+                lot_size=options_metadata.get('lot_size', 1),
+                contract_multiplier=options_metadata.get('contract_multiplier', 1.0),
             )
             stoploss = self.strategy.stoploss
             trade.adjust_stop_loss(trade.open_rate, stoploss, initial=True)
@@ -1062,6 +1074,75 @@ class FreqtradeBot(LoggingMixin):
                 )
 
         return True
+
+    def _get_options_metadata(self, pair: str, instrument_type: InstrumentType) -> dict:
+        """
+        Extract options metadata from pair symbol.
+        
+        :param pair: Trading pair
+        :param instrument_type: Type of instrument
+        :return: Dictionary with options metadata
+        """
+        metadata = {
+            'strike_price': None,
+            'expiry_date': None,
+            'option_type': None,
+            'lot_size': 1,
+            'contract_multiplier': 1.0
+        }
+        
+        if not instrument_type.is_options():
+            return metadata
+        
+        try:
+            # Try to parse options symbol using exchange-specific method
+            if hasattr(self.exchange, 'parse_options_symbol'):
+                options_data = self.exchange.parse_options_symbol(pair.split('/')[0])
+                if options_data:
+                    metadata.update({
+                        'strike_price': options_data.get('strike_price'),
+                        'expiry_date': options_data.get('expiry_date'),
+                        'option_type': options_data.get('option_type'),
+                    })
+            
+            # Get lot size if LotSizeManager is available
+            if hasattr(self.wallets, '_lot_size_manager') and self.wallets._lot_size_manager:
+                lot_size = self.wallets._lot_size_manager.get_lot_size(pair)
+                metadata['lot_size'] = lot_size
+                metadata['contract_multiplier'] = float(lot_size)
+            
+        except Exception as e:
+            logger.warning(f"Failed to extract options metadata for {pair}: {e}")
+        
+        return metadata
+
+    def check_options_expiry(self) -> None:
+        """
+        Check for options trades approaching expiry and force exit if needed.
+        """
+        if not self.config.get('enable_options_trading', False):
+            return
+        
+        try:
+            # Get all open options trades
+            open_trades = Trade.get_open_trades()
+            options_trades = [t for t in open_trades if t.is_options_trade]
+            
+            for trade in options_trades:
+                if trade.expiry_date:
+                    days_to_expiry = (trade.expiry_date.date() - datetime.now().date()).days
+                    
+                    # Force exit if expiry is within 1 day
+                    if days_to_expiry <= 1:
+                        logger.warning(f"Options trade {trade.id} for {trade.pair} expires in {days_to_expiry} days, forcing exit")
+                        self.execute_trade_exit(
+                            trade=trade,
+                            limit=trade.close_rate or self.exchange.get_rate(trade.pair, side="exit", is_short=trade.is_short, refresh=True),
+                            exit_check=ExitCheckTuple(exit_type=ExitType.FORCE_EXIT, exit_reason="options_expiry")
+                        )
+                        
+        except Exception as e:
+            logger.error(f"Failed to check options expiry: {e}")
 
     def cancel_stoploss_on_exchange(self, trade: Trade) -> Trade:
         # First cancelling stoploss on exchange ...

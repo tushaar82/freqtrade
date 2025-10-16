@@ -35,7 +35,7 @@ from freqtrade.constants import (
     BuySell,
     LongShort,
 )
-from freqtrade.enums import ExitType, TradingMode
+from freqtrade.enums import ExitType, InstrumentType, TradingMode
 from freqtrade.exceptions import DependencyException, OperationalException
 from freqtrade.exchange import (
     ROUND_DOWN,
@@ -464,7 +464,25 @@ class LocalTrade:
     funding_fee_running: float | None = None
     # v 2 -> correct max_stake_amount calculation for leveraged trades
     record_version: int = 2
+    
+    # Options trading properties
+    instrument_type: str = "EQUITY"
+    strike_price: float | None = None
+    expiry_date: datetime | None = None
+    option_type: str | None = None  # 'CALL' or 'PUT'
+    lot_size: int = 1
+    contract_multiplier: float = 1.0
 
+    @property
+    def is_options_trade(self) -> bool:
+        """Check if this is an options trade"""
+        return self.instrument_type in ('CALL_OPTION', 'PUT_OPTION')
+    
+    @property
+    def is_derivative_trade(self) -> bool:
+        """Check if this is a derivative trade (futures or options)"""
+        return self.instrument_type in ('FUTURES', 'CALL_OPTION', 'PUT_OPTION')
+    
     @property
     def stoploss_or_liquidation(self) -> float:
         if self.liquidation_price:
@@ -639,6 +657,14 @@ class LocalTrade:
         return open_orders_ids_wo_sl
 
     def __init__(self, **kwargs):
+        # Set default values for options fields
+        self.instrument_type = kwargs.get('instrument_type', 'EQUITY')
+        self.strike_price = kwargs.get('strike_price', None)
+        self.expiry_date = kwargs.get('expiry_date', None)
+        self.option_type = kwargs.get('option_type', None)
+        self.lot_size = kwargs.get('lot_size', 1)
+        self.contract_multiplier = kwargs.get('contract_multiplier', 1.0)
+        
         for key in kwargs:
             setattr(self, key, kwargs[key])
         self.recalc_open_trade_value()
@@ -724,6 +750,12 @@ class LocalTrade:
             "profit_ratio": self.close_profit,
             "profit_pct": round(self.close_profit * 100, 2) if self.close_profit else None,
             "profit_abs": self.close_profit_abs,
+            "instrument_type": self.instrument_type,
+            "strike_price": self.strike_price,
+            "expiry_date": self.expiry_date.strftime(DATETIME_PRINT_FORMAT) if self.expiry_date else None,
+            "option_type": self.option_type,
+            "lot_size": self.lot_size,
+            "contract_multiplier": self.contract_multiplier,
             "exit_reason": self.exit_reason,
             "exit_order_status": self.exit_order_status,
             "stop_loss_abs": self.stop_loss,
@@ -1734,6 +1766,14 @@ class Trade(ModelBase, LocalTrade):
     funding_fee_running: Mapped[float | None] = mapped_column(Float(), nullable=True, default=None)
 
     record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=2)
+    
+    # Options trading properties
+    instrument_type: Mapped[str] = mapped_column(String(25), nullable=False, default='EQUITY')
+    strike_price: Mapped[float | None] = mapped_column(Float(), nullable=True)
+    expiry_date: Mapped[datetime | None] = mapped_column(nullable=True)
+    option_type: Mapped[str | None] = mapped_column(String(10), nullable=True)  # 'CALL' or 'PUT'
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    contract_multiplier: Mapped[float] = mapped_column(Float(), nullable=False, default=1.0)
 
     def __init__(self, **kwargs):
         from_json = kwargs.pop("__FROM_JSON", None)

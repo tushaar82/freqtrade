@@ -226,3 +226,15 @@ IntOrInf = float
 
 
 EntryExecuteMode = Literal["initial", "pos_adjust", "replace"]
+
+# Options trading constants
+OPTIONS_PRODUCT_TYPES = ['CALL', 'PUT']
+NSE_OPTIONS_EXCHANGES = ['NFO', 'BFO', 'CDS']
+DEFAULT_LOT_SIZE = 1
+MAX_DAYS_TO_EXPIRY = 90
+MIN_STRIKE_DISTANCE = 50
+LOT_SIZE_UPDATE_INTERVAL = 86400  # Daily update in seconds
+
+# Option symbol regex pattern for parsing
+import re
+OPTION_SYMBOL_REGEX = re.compile(r'^([A-Z]+)(\d{1,2}[A-Z]{3}\d{2,4})?(\d+)(CE|PE)$')

@@ -573,3 +573,12 @@ def sysinfo():
 @router.get("/health", response_model=Health, tags=["info"])
 def health(rpc: RPC = Depends(get_rpc)):
     return rpc.health()
+
+
+# Include new API modules
+from freqtrade.rpc.api_server import api_brokers, api_options, api_mobile
+
+# Add new routers to the main router
+router.include_router(api_brokers.router, prefix='/brokers', tags=['brokers'])
+router.include_router(api_options.router, prefix='/options', tags=['options'])
+router.include_router(api_mobile.router, prefix='/mobile', tags=['mobile'])

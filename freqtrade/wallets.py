@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Literal, NamedTuple
 
 from freqtrade.constants import UNLIMITED_STAKE_AMOUNT, Config, IntOrInf
-from freqtrade.enums import RunMode, TradingMode
+from freqtrade.enums import InstrumentType, RunMode, TradingMode
 from freqtrade.exceptions import DependencyException
 from freqtrade.exchange import Exchange
 from freqtrade.misc import safe_value_fallback
@@ -50,6 +50,16 @@ class Wallets:
             self._start_cap = _start_cap
 
         self._last_wallet_refresh: datetime | None = None
+        
+        # Initialize LotSizeManager for options trading
+        self._lot_size_manager = None
+        if config.get('enable_options_trading', False):
+            try:
+                from freqtrade.data.lot_size_manager import LotSizeManager
+                self._lot_size_manager = LotSizeManager(config)
+            except ImportError:
+                logger.warning("LotSizeManager not available, options trading disabled")
+        
         self.update()
 
     def get_free(self, currency: str) -> float:
@@ -350,6 +360,49 @@ class Wallets:
             )
 
         return max(stake_amount, 0)
+    
+    def calculate_options_stake(self, stake_amount: float, pair: str, 
+                               instrument_type: InstrumentType) -> float:
+        """
+        Calculate stake amount for options trades based on lot size requirements.
+        
+        :param stake_amount: Original stake amount
+        :param pair: Trading pair
+        :param instrument_type: Type of instrument
+        :return: Adjusted stake amount
+        """
+        if not self._lot_size_manager or not instrument_type.requires_lot_size():
+            return stake_amount
+        
+        try:
+            # Get current price for the instrument
+            ticker = self._exchange.fetch_ticker(pair)
+            current_price = ticker.get('last', 0)
+            
+            if current_price <= 0:
+                logger.warning(f"Invalid price for {pair}, using original stake amount")
+                return stake_amount
+            
+            # Calculate quantity and lots based on stake amount
+            quantity, lots = self._lot_size_manager.calculate_quantity(
+                stake_amount, current_price, pair, instrument_type
+            )
+            
+            if lots == 0:
+                logger.warning(f"Insufficient stake amount for {pair} lot size requirements")
+                return 0
+            
+            # Calculate actual stake amount based on lot-adjusted quantity
+            lot_adjusted_stake = quantity * current_price
+            
+            logger.info(f"Options stake adjustment for {pair}: {stake_amount} -> {lot_adjusted_stake} "
+                       f"(lots: {lots}, quantity: {quantity})")
+            
+            return lot_adjusted_stake
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate options stake for {pair}: {e}")
+            return stake_amount
 
     def get_trade_stake_amount(
         self, pair: str, max_open_trades: IntOrInf, update: bool = True
@@ -371,6 +424,11 @@ class Wallets:
             stake_amount = self._calculate_unlimited_stake_amount(
                 available_amount, val_tied_up, max_open_trades
             )
+
+        # Check if this is an options instrument and adjust stake based on lot size
+        instrument_type = InstrumentType.from_symbol(pair)
+        if instrument_type.requires_lot_size() and self._lot_size_manager:
+            stake_amount = self.calculate_options_stake(stake_amount, pair, instrument_type)
 
         return self._check_available_stake_amount(stake_amount, available_amount)
 
@@ -395,6 +453,25 @@ class Wallets:
             # Otherwise we could no longer exit.
             max_allowed_stake = min(max_allowed_stake, max_stake_amount - trade_amount)
 
+        # Check lot size requirements for options
+        instrument_type = InstrumentType.from_symbol(pair)
+        if instrument_type.requires_lot_size() and self._lot_size_manager:
+            lot_size = self._lot_size_manager.get_lot_size(pair)
+            try:
+                ticker = self._exchange.fetch_ticker(pair)
+                current_price = ticker.get('last', 0)
+                if current_price > 0:
+                    min_lot_stake = lot_size * current_price
+                    if stake_amount < min_lot_stake:
+                        self._local_log(
+                            f"Stake amount {stake_amount} is less than minimum lot requirement "
+                            f"{min_lot_stake} for {pair} (lot size: {lot_size})",
+                            level="warning",
+                        )
+                        return 0
+            except Exception as e:
+                logger.error(f"Failed to validate lot size for {pair}: {e}")
+        
         if min_stake_amount is not None and min_stake_amount > max_allowed_stake:
             self._local_log(
                 "Minimum stake amount > available balance. "

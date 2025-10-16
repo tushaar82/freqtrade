@@ -51,6 +51,7 @@ from freqtrade.exchange.okx import MyOkx, Okx
 from freqtrade.exchange.openalgo import Openalgo
 from freqtrade.exchange.paperbroker import Paperbroker
 from freqtrade.exchange.smartapi import Smartapi
+from freqtrade.exchange.zerodha import Zerodha
 
 # Register custom exchanges with the factory
 from freqtrade.exchange.exchange_factory import register_custom_exchange
@@ -59,3 +60,4 @@ from freqtrade.exchange.exchange_factory import register_custom_exchange
 register_custom_exchange('openalgo', Openalgo)
 register_custom_exchange('paperbroker', Paperbroker)
 register_custom_exchange('smartapi', Smartapi)
+register_custom_exchange('zerodha', Zerodha)

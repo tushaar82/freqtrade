@@ -663,3 +663,159 @@ class CustomDataEntry(BaseModel):
 class ListCustomData(BaseModel):
     trade_id: int
     custom_data: list[CustomDataEntry]
+
+
+# New schemas for broker management, options, and mobile APIs
+
+class BrokerConfig(BaseModel):
+    broker_name: str
+    credentials: dict[str, Any]
+    is_active: bool = True
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class BrokerStatus(BaseModel):
+    broker_name: str
+    status: str  # 'connected', 'disconnected', 'error'
+    message: str
+    timestamp: datetime
+
+
+class OptionChain(BaseModel):
+    symbol: str
+    expiry: str | None = None
+    chains: list[dict[str, Any]]
+    timestamp: datetime
+
+
+class OptionGreeks(BaseModel):
+    symbol: str
+    option_type: str  # 'CALL' or 'PUT'
+    spot_price: float
+    strike_price: float
+    time_to_expiry: float
+    volatility: float
+    theoretical_price: float
+    greeks: dict[str, float]
+    timestamp: datetime
+
+
+class LotSizeData(BaseModel):
+    symbol: str | None = None
+    base_symbol: str
+    lot_size: int
+    instrument_type: str
+    requires_lot_size: bool
+    last_updated: datetime | None = None
+
+
+class MobileDashboard(BaseModel):
+    summary: dict[str, Any]
+    recent_trades: list[dict[str, Any]]
+    timestamp: datetime
+
+
+class WatchlistItem(BaseModel):
+    symbol: str
+    current_price: float
+    change_24h: float
+    is_trading: bool
+
+
+class PriceAlert(BaseModel):
+    id: int | None = None
+    symbol: str
+    alert_type: str  # 'price_above', 'price_below'
+    target_price: float
+    current_price: float | None = None
+    is_active: bool = True
+    created_at: datetime | None = None
+
+
+class QuickOrder(BaseModel):
+    pair: str
+    side: str  # 'buy' or 'sell'
+    amount: float
+    order_type: str = 'market'
+    price: float | None = None
+
+
+class PortfolioSummary(BaseModel):
+    total_value: float
+    available_cash: float
+    invested_amount: float
+    total_pnl: float
+    total_pnl_pct: float
+    positions_count: int
+    equity_positions: int
+    options_positions: int
+
+
+# Extend existing OpenTradeSchema to include options fields
+class OpenTradeSchemaExtended(BaseModel):
+    trade_id: int
+    pair: str
+    base_currency: str
+    quote_currency: str
+    is_open: bool
+    exchange: str
+    amount: float
+    amount_requested: float
+    stake_amount: float
+    strategy: str
+    enter_tag: str | None = None
+    timeframe: int
+    fee_open: float
+    fee_open_cost: float | None = None
+    fee_open_currency: str | None = None
+    fee_close: float | None = None
+    fee_close_cost: float | None = None
+    fee_close_currency: str | None = None
+    open_date: str
+    open_timestamp: int
+    open_fill_date: str | None = None
+    open_fill_timestamp: int | None = None
+    open_rate: float
+    open_rate_requested: float | None = None
+    open_trade_value: float
+    close_date: str | None = None
+    close_timestamp: int | None = None
+    close_rate: float | None = None
+    close_rate_requested: float | None = None
+    close_profit: float | None = None
+    close_profit_pct: float | None = None
+    close_profit_abs: float | None = None
+    trade_duration_s: int | None = None
+    trade_duration: int | None = None
+    profit_ratio: float | None = None
+    profit_pct: float | None = None
+    profit_abs: float | None = None
+    exit_reason: str | None = None
+    exit_order_status: str | None = None
+    stop_loss_abs: float | None = None
+    stop_loss_ratio: float | None = None
+    stop_loss_pct: float | None = None
+    stoploss_last_update: str | None = None
+    stoploss_last_update_timestamp: int | None = None
+    initial_stop_loss_abs: float | None = None
+    initial_stop_loss_ratio: float | None = None
+    initial_stop_loss_pct: float | None = None
+    min_rate: float | None = None
+    max_rate: float | None = None
+    leverage: float | None = None
+    interest_rate: float | None = None
+    liquidation_price: float | None = None
+    is_short: bool | None = None
+    trading_mode: TradingMode | None = None
+    funding_fees: float | None = None
+    realized_profit: float
+    orders: list[dict[str, Any]]
+    
+    # Options-specific fields
+    instrument_type: str = 'EQUITY'
+    strike_price: float | None = None
+    expiry_date: str | None = None
+    option_type: str | None = None  # 'CALL' or 'PUT'
+    lot_size: int = 1
+    contract_multiplier: float = 1.0

@@ -10,6 +10,7 @@ user_data/*
 !user_data/notebooks
 !user_data/models
 !user_data/freqaimodels
+!user_data/lot_sizes.json
 user_data/freqaimodels/*
 user_data/models/*
 user_data/notebooks/*
@@ -118,5 +119,6 @@ target/
 !config_examples/config_openalgo_nse.example.json
 !config_examples/config_smartapi_nse.example.json
 !config_examples/config_paperbroker.example.json
+!config_examples/config_zerodha_nse.example.json
 
 docker-compose-*.yml
