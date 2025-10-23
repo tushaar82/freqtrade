@@ -1269,21 +1269,27 @@ class Openalgo(CustomExchange):
         try:
             # Get the most recent candle
             ohlcv = self.fetch_ohlcv(pair, '5m', limit=1)
-            if ohlcv:
+            if ohlcv and len(ohlcv) > 0:
                 last_candle = ohlcv[-1]
-                return {
-                    'symbol': pair,
-                    'last': last_candle[4],  # close price
-                    'bid': last_candle[4],
-                    'ask': last_candle[4],
-                    'high': last_candle[2],
-                    'low': last_candle[3],
-                    'volume': last_candle[5],
-                }
-            return {'symbol': pair, 'last': 0, 'bid': 0, 'ask': 0}
+                close_price = float(last_candle[4])
+                if close_price > 0:
+                    return {
+                        'symbol': pair,
+                        'last': close_price,
+                        'bid': close_price,
+                        'ask': close_price,
+                        'high': float(last_candle[2]),
+                        'low': float(last_candle[3]),
+                        'volume': float(last_candle[5]),
+                    }
+            
+            # If no data, return None to indicate unavailable
+            # This prevents division by zero errors
+            logger.warning(f"No ticker data available for {pair}")
+            return None
         except Exception as e:
             logger.warning(f"Failed to fetch ticker for {pair}: {e}")
-            return {'symbol': pair, 'last': 0, 'bid': 0, 'ask': 0}
+            return None
     
     def fetch_tickers(self, symbols: list[str] | None = None) -> dict:
         """

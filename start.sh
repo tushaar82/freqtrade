@@ -64,6 +64,62 @@ if [ "$MODE" = "trade" ]; then
     fi
 fi
 
+# Clean up old trades before starting (trade mode only)
+if [ "$MODE" = "trade" ]; then
+    echo "========================================="
+    echo "Cleaning up old trades..."
+    echo "========================================="
+    
+    # Find database file
+    DB_FILE=""
+    if [ -f "tradesv3.sqlite" ]; then
+        DB_FILE="tradesv3.sqlite"
+    elif [ -f "user_data/tradesv3.sqlite" ]; then
+        DB_FILE="user_data/tradesv3.sqlite"
+    fi
+    
+    if [ -n "$DB_FILE" ]; then
+        # Close all open trades
+        python3 << EOF
+import sqlite3
+import os
+
+if os.path.exists("$DB_FILE"):
+    conn = sqlite3.connect("$DB_FILE")
+    cursor = conn.cursor()
+    
+    # Get count of open trades
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1")
+    count = cursor.fetchone()[0]
+    
+    if count > 0:
+        print(f"Found {count} open trade(s) - closing them...")
+        
+        # Close all open trades
+        cursor.execute("""
+            UPDATE trades 
+            SET is_open = 0, 
+                close_date = datetime('now'),
+                close_rate = open_rate,
+                close_profit = 0,
+                close_profit_abs = 0,
+                exit_reason = 'startup_cleanup'
+            WHERE is_open = 1
+        """)
+        
+        conn.commit()
+        print(f"✓ Closed {cursor.rowcount} trade(s)")
+    else:
+        print("✓ No open trades to close")
+    
+    conn.close()
+else:
+    print("✓ No database found (fresh start)")
+EOF
+        echo ""
+    fi
+fi
+
 # Display startup info
 echo "========================================="
 echo "Freqtrade NSE Trading System"
