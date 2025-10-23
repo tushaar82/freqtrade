@@ -226,11 +226,13 @@ class RPC:
                             actual_amount = trade.amount
                             if actual_amount == 0 and trade.stake_amount > 0 and trade.open_rate > 0:
                                 actual_amount = trade.stake_amount / trade.open_rate
+                                logger.info(f"RPC FIX: Trade {trade.id} has amount=0, calculating as {actual_amount:.2f} from stake/rate")
                                 # Override trade amount temporarily for profit calculation
                                 original_amount = trade.amount
                                 trade.amount = actual_amount
                                 prof = trade.calculate_profit(current_rate)
                                 trade.amount = original_amount  # Restore original
+                                logger.info(f"RPC FIX: Calculated profit: {prof.profit_abs:.2f} INR ({prof.profit_ratio*100:.2f}%)")
                             else:
                                 prof = trade.calculate_profit(current_rate)
                             current_profit = prof.profit_ratio

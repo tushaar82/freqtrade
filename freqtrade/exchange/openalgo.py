@@ -1136,8 +1136,10 @@ class Openalgo(CustomExchange):
         
         # Check if ticker is None (no data available)
         if ticker is None:
-            logger.error(f"No ticker data available for {pair}")
-            raise ExchangeError(f"No ticker data available for {pair}")
+            logger.warning(f"No ticker data available for {pair} - skipping")
+            # Return 0 instead of raising exception to allow Freqtrade to continue
+            # Freqtrade will skip this pair
+            return 0.0
         
         # Use last price as the rate
         # For entry: use ask price (buying)
