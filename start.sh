@@ -64,10 +64,10 @@ if [ "$MODE" = "trade" ]; then
     fi
 fi
 
-# Clean up old trades before starting (trade mode only)
+# Clean up old trades with amount=0 before starting (trade mode only)
 if [ "$MODE" = "trade" ]; then
     echo "========================================="
-    echo "Cleaning up old trades..."
+    echo "Checking for invalid trades..."
     echo "========================================="
     
     # Find database file
@@ -79,7 +79,7 @@ if [ "$MODE" = "trade" ]; then
     fi
     
     if [ -n "$DB_FILE" ]; then
-        # Close all open trades
+        # Close only trades with amount=0 (invalid trades)
         python3 << EOF
 import sqlite3
 import os
@@ -88,14 +88,14 @@ if os.path.exists("$DB_FILE"):
     conn = sqlite3.connect("$DB_FILE")
     cursor = conn.cursor()
     
-    # Get count of open trades
-    cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1")
+    # Get count of invalid trades (amount=0)
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1 AND amount = 0")
     count = cursor.fetchone()[0]
     
     if count > 0:
-        print(f"Found {count} open trade(s) - closing them...")
+        print(f"Found {count} invalid trade(s) with amount=0 - closing them...")
         
-        # Close all open trades
+        # Close only trades with amount=0
         cursor.execute("""
             UPDATE trades 
             SET is_open = 0, 
@@ -103,14 +103,20 @@ if os.path.exists("$DB_FILE"):
                 close_rate = open_rate,
                 close_profit = 0,
                 close_profit_abs = 0,
-                exit_reason = 'startup_cleanup'
-            WHERE is_open = 1
+                exit_reason = 'invalid_amount'
+            WHERE is_open = 1 AND amount = 0
         """)
         
         conn.commit()
-        print(f"✓ Closed {cursor.rowcount} trade(s)")
+        print(f"✓ Closed {cursor.rowcount} invalid trade(s)")
     else:
-        print("✓ No open trades to close")
+        print("✓ No invalid trades found")
+    
+    # Show valid open trades
+    cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1")
+    valid_count = cursor.fetchone()[0]
+    if valid_count > 0:
+        print(f"✓ {valid_count} valid trade(s) will continue")
     
     conn.close()
 else:

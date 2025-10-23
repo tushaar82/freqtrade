@@ -222,7 +222,17 @@ class RPC:
                     if len(trade.select_filled_orders(trade.entry_side)) > 0:
                         current_profit = current_profit_abs = current_profit_fiat = nan
                         if not isnan(current_rate):
-                            prof = trade.calculate_profit(current_rate)
+                            # Fix for amount=0: calculate from stake_amount / open_rate
+                            actual_amount = trade.amount
+                            if actual_amount == 0 and trade.stake_amount > 0 and trade.open_rate > 0:
+                                actual_amount = trade.stake_amount / trade.open_rate
+                                # Override trade amount temporarily for profit calculation
+                                original_amount = trade.amount
+                                trade.amount = actual_amount
+                                prof = trade.calculate_profit(current_rate)
+                                trade.amount = original_amount  # Restore original
+                            else:
+                                prof = trade.calculate_profit(current_rate)
                             current_profit = prof.profit_ratio
                             current_profit_abs = prof.profit_abs
                             total_profit_abs = prof.total_profit
@@ -264,8 +274,15 @@ class RPC:
                 stoploss_current_dist_ratio = stoploss_current_dist / current_rate
 
                 trade_dict = trade.to_json()
+                
+                # Fix amount display if it's 0
+                display_amount = trade_dict.get('amount', 0)
+                if display_amount == 0 and trade.stake_amount > 0 and trade.open_rate > 0:
+                    display_amount = trade.stake_amount / trade.open_rate
+                
                 trade_dict.update(
                     dict(
+                        amount=display_amount,  # Override with calculated amount
                         close_profit=trade.close_profit if not trade.is_open else None,
                         current_rate=current_rate,
                         profit_ratio=current_profit,

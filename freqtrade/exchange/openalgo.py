@@ -563,11 +563,14 @@ class Openalgo(CustomExchange):
             # Simply round to nearest integer, minimum 1 share
             quantity = max(1, int(round(amount)))
         
-        logger.info(f"Order calculation for {pair}:")
-        logger.info(f"  - Original amount: {amount}")
-        logger.info(f"  - Price/Rate: {rate}")
-        logger.info(f"  - Final quantity: {quantity} shares")
-        logger.info(f"  - Order value: {quantity * rate if rate else 0} INR")
+        logger.info(f"=" * 60)
+        logger.info(f"ORDER CALCULATION for {pair}:")
+        logger.info(f"  Input amount from Freqtrade: {amount}")
+        logger.info(f"  Price/Rate: {rate}")
+        logger.info(f"  Fixed quantity config: {fixed_qty}")
+        logger.info(f"  FINAL QUANTITY TO ORDER: {quantity} shares")
+        logger.info(f"  Order value: ₹{quantity * rate if rate else 0:.2f}")
+        logger.info(f"=" * 60)
         
         order_data = {
             'strategy': self._strategy_name,
@@ -595,18 +598,26 @@ class Openalgo(CustomExchange):
             response = self._make_request('/api/v1/placeorder', method='POST', data=order_data)
             
             order_id = response.get('orderid')
+            
+            # Create order response with correct quantity
             order = self._create_order_response(
                 order_id=order_id,
                 pair=pair,
                 order_type=ordertype,
                 side=side,
-                amount=quantity,  # Use calculated quantity, not original amount
+                amount=float(quantity),  # Use calculated quantity as float
                 price=rate,
                 status='open'
             )
             order['info'] = response
-            order['filled'] = 0  # Will be updated when order is filled
-            order['remaining'] = quantity
+            order['filled'] = float(quantity)  # Mark as filled immediately for market orders
+            order['remaining'] = 0.0
+            order['amount'] = float(quantity)  # Ensure amount is set
+            order['cost'] = float(quantity * rate) if rate else 0.0
+            
+            logger.info(f"✓ Order created: {order_id}")
+            logger.info(f"  Amount in order response: {order['amount']}")
+            logger.info(f"  Filled: {order['filled']}")
             
             # Cache as open order
             self._open_orders_cache[order_id] = order
@@ -1123,6 +1134,11 @@ class Openalgo(CustomExchange):
         if ticker is None:
             ticker = self.fetch_ticker(pair)
         
+        # Check if ticker is None (no data available)
+        if ticker is None:
+            logger.error(f"No ticker data available for {pair}")
+            raise ExchangeError(f"No ticker data available for {pair}")
+        
         # Use last price as the rate
         # For entry: use ask price (buying)
         # For exit: use bid price (selling)
@@ -1131,8 +1147,8 @@ class Openalgo(CustomExchange):
         else:
             rate = ticker.get('bid') or ticker.get('last')
         
-        if rate is None:
-            raise ExchangeError(f"Could not determine rate for {pair}")
+        if rate is None or rate == 0:
+            raise ExchangeError(f"Could not determine valid rate for {pair}")
         
         return float(rate)
     
@@ -1261,10 +1277,11 @@ class Openalgo(CustomExchange):
         """
         pass
     
-    def fetch_ticker(self, pair: str) -> dict:
+    def fetch_ticker(self, pair: str) -> dict | None:
         """
         Fetch ticker data for a pair.
         Returns last price from most recent candle.
+        Returns None if no data available.
         """
         try:
             # Get the most recent candle
@@ -1283,12 +1300,11 @@ class Openalgo(CustomExchange):
                         'volume': float(last_candle[5]),
                     }
             
-            # If no data, return None to indicate unavailable
-            # This prevents division by zero errors
-            logger.warning(f"No ticker data available for {pair}")
+            # If no data available, log and return None
+            logger.warning(f"No ticker data available for {pair} - no OHLCV data")
             return None
         except Exception as e:
-            logger.warning(f"Failed to fetch ticker for {pair}: {e}")
+            logger.error(f"Failed to fetch ticker for {pair}: {e}")
             return None
     
     def fetch_tickers(self, symbols: list[str] | None = None) -> dict:
@@ -1375,9 +1391,10 @@ class Openalgo(CustomExchange):
     
     def get_precision_amount(self, pair: str) -> float | None:
         """
-        Get amount precision.
+        Get amount precision for NSE.
+        Return 0 to indicate integer-only (no decimal places).
         """
-        return 1.0
+        return 0.0  # 0 decimal places = integers only
     
     def get_precision_price(self, pair: str) -> float | None:
         """
@@ -1423,13 +1440,29 @@ class Openalgo(CustomExchange):
         """
         Override amount calculation for NSE.
         Returns integer quantity based on fixed_quantity config or rounded amount.
+        This is called by Freqtrade to validate/adjust the amount.
+        """
+        fixed_qty = self._config.get('exchange', {}).get('fixed_quantity')
+        
+        if fixed_qty and fixed_qty > 0:
+            result = float(fixed_qty)
+            logger.info(f"get_valid_pair_amount called for {pair}: returning fixed quantity {result}")
+            return result
+        else:
+            # Round to integer shares
+            result = float(max(1, int(round(amount))))
+            logger.info(f"get_valid_pair_amount called for {pair}: input={amount}, returning {result}")
+            return result
+    
+    def amount_to_precision(self, pair: str, amount: float) -> float:
+        """
+        Override to ensure amount is always an integer for NSE.
         """
         fixed_qty = self._config.get('exchange', {}).get('fixed_quantity')
         
         if fixed_qty and fixed_qty > 0:
             return float(fixed_qty)
         else:
-            # Round to integer shares
             return float(max(1, int(round(amount))))
     
     def funding_fee_cutoff(self, open_date: datetime) -> bool:
