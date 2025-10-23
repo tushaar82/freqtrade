@@ -19,6 +19,9 @@ from freqtrade.exceptions import (
 )
 from freqtrade.exchange.custom_exchange import CustomExchange
 from freqtrade.exchange.exchange_types import FtHas, OrderBook, Ticker
+from freqtrade.exchange.rate_limiter import BrokerRateLimits
+from freqtrade.exchange.lot_size_manager import LotSizeManager
+from freqtrade.exchange.nse_calendar import get_nse_calendar
 
 
 logger = logging.getLogger(__name__)
@@ -76,14 +79,20 @@ class Openalgo(CustomExchange):
         # Session for connection pooling
         self._session = requests.Session()
         self._session.headers.update({'Content-Type': 'application/json'})
-        
+
+        # Initialize rate limiter
+        self._rate_limiter = BrokerRateLimits.get_limiter('openalgo')
+
+        # Initialize lot size manager
+        self._lot_size_manager = LotSizeManager()
+
         # Order tracking
         self._open_orders_cache = {}  # Cache for open orders
-        
+
         # Initialize markets from pair whitelist
         pair_whitelist = config.get('exchange', {}).get('pair_whitelist', [])
         self._init_markets_from_pairs(pair_whitelist, quote_currency='INR')
-        
+
         logger.info(f"OpenAlgo exchange initialized with host: {self._host}")
         
     def _get_headers(self) -> dict:
@@ -93,19 +102,27 @@ class Openalgo(CustomExchange):
             'Content-Type': 'application/json'
         }
 
-    def _make_request(self, endpoint: str, method: str = 'GET', 
+    def _rate_limit(self, endpoint: Optional[str] = None):
+        """Apply rate limiting before API calls"""
+        if hasattr(self, '_rate_limiter'):
+            self._rate_limiter.wait_if_needed(endpoint)
+
+    def _make_request(self, endpoint: str, method: str = 'GET',
                      data: dict | None = None, params: dict | None = None) -> dict:
         """
         Make a request to OpenAlgo API.
-        
+
         :param endpoint: API endpoint
         :param method: HTTP method
         :param data: Request body data
         :param params: Query parameters
         :return: Response data
         """
+        # Apply rate limiting
+        self._rate_limit(endpoint)
+
         url = f"{self._host}{endpoint}"
-        
+
         try:
             if method == 'GET':
                 response = self._session.get(url, headers=self._get_headers(), params=params)
@@ -820,19 +837,8 @@ class Openalgo(CustomExchange):
     def is_market_open(self) -> bool:
         """
         Check if NSE market is currently open.
-        
+
         :return: True if market is open
         """
-        now = datetime.now()
-        
-        # Check if it's a weekday (Monday = 0, Sunday = 6)
-        if now.weekday() > 4:  # Saturday or Sunday
-            return False
-            
-        # Check market hours
-        market_open = datetime.strptime(self.NSE_MARKET_OPEN, '%H:%M').time()
-        market_close = datetime.strptime(self.NSE_MARKET_CLOSE, '%H:%M').time()
-        
-        current_time = now.time()
-        
-        return market_open <= current_time <= market_close
+        nse_calendar = get_nse_calendar()
+        return nse_calendar.is_market_open()

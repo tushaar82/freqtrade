@@ -53,6 +53,11 @@ from freqtrade.exchange.paperbroker import Paperbroker
 from freqtrade.exchange.smartapi import Smartapi
 from freqtrade.exchange.zerodha import Zerodha
 
+# Indian broker utilities
+from freqtrade.exchange.rate_limiter import RateLimiter, BrokerRateLimits
+from freqtrade.exchange.lot_size_manager import LotSizeManager, NSELotSizeManager
+from freqtrade.exchange.nse_calendar import NSECalendar, get_nse_calendar
+
 # Register custom exchanges with the factory
 from freqtrade.exchange.exchange_factory import register_custom_exchange
 

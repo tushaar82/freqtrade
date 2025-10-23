@@ -16,14 +16,17 @@ from freqtrade.exceptions import (
     OperationalException,
     TemporaryError,
 )
-from freqtrade.exchange import Exchange
+from freqtrade.exchange.custom_exchange import CustomExchange
 from freqtrade.exchange.exchange_types import FtHas, OrderBook, Ticker
+from freqtrade.exchange.rate_limiter import BrokerRateLimits
+from freqtrade.exchange.lot_size_manager import LotSizeManager
+from freqtrade.exchange.nse_calendar import get_nse_calendar
 
 
 logger = logging.getLogger(__name__)
 
 
-class Smartapi(Exchange):
+class Smartapi(CustomExchange):
     """
     Smart API (Angel One) exchange class for NSE trading.
     
@@ -60,41 +63,12 @@ class Smartapi(Exchange):
     def __init__(self, config, validate: bool = True, exchange_config=None, load_leverage_tiers: bool = False, **kwargs):
         """
         Initialize Smart API exchange.
-        
+
         Requires Smart API credentials (api_key, username, password, totp_token).
         """
-        # Initialize minimal Exchange attributes without CCXT
-        from threading import Lock
-        from cachetools import TTLCache
-        
-        self._api = None  # No CCXT API for Smart API
-        self._api_async = None
-        self._ws_async = None
-        self._exchange_ws = None
-        self._markets = {}
-        self._trading_fees = {}
-        self._leverage_tiers = {}
-        self._loop_lock = Lock()
-        self.loop = None  # No async loop for Smart API
-        self._config = config
-        self._cache_lock = Lock()
-        self._fetch_tickers_cache = TTLCache(maxsize=4, ttl=60 * 10)
-        self._exit_rate_cache = TTLCache(maxsize=100, ttl=300)
-        self._entry_rate_cache = TTLCache(maxsize=100, ttl=300)
-        self._klines = {}
-        self._expiring_candle_cache = {}
-        self._trades = {}
-        self._dry_run_open_orders = {}
-        
-        # Additional Exchange attributes
-        self._pairs_last_refresh_time = {}
-        self._last_markets_refresh = 0
-        self._ft_has = self._ft_has.copy()
-        self.log_responses = False
-        self._ohlcv_partial_candle = self._ft_has.get('ohlcv_partial_candle', True)
-        self.liquidation_buffer = 0.05
-        self.required_candle_call_count = 1  # Number of candle calls needed
-        
+        # Initialize CustomExchange base class
+        super().__init__(config)
+
         # Set trading mode
         self.trading_mode = TradingMode.SPOT
         self.margin_mode = MarginMode.NONE
@@ -124,12 +98,27 @@ class Smartapi(Exchange):
         
         # Default exchange
         self._default_exchange = exchange_config.get('nse_exchange', 'NSE')
-        
+
+        # Initialize rate limiter
+        self._rate_limiter = BrokerRateLimits.get_limiter('smartapi')
+
+        # Initialize lot size manager
+        self._lot_size_manager = LotSizeManager()
+
         # Login to Smart API
         self._login()
-        
+
+        # Initialize markets from pair whitelist
+        pair_whitelist = config.get('exchange', {}).get('pair_whitelist', [])
+        self._init_markets_from_pairs(pair_whitelist, quote_currency='INR')
+
         logger.info(f"Smart API exchange initialized for user: {self._username}")
         
+    def _rate_limit(self, endpoint: Optional[str] = None):
+        """Apply rate limiting before API calls"""
+        if hasattr(self, '_rate_limiter'):
+            self._rate_limiter.wait_if_needed(endpoint)
+
     def _login(self):
         """Login to Smart API and get authentication tokens"""
         try:
@@ -302,13 +291,16 @@ class Smartapi(Exchange):
     def fetch_ticker(self, pair: str) -> Ticker:
         """
         Fetch ticker data for a pair.
-        
+
         :param pair: Freqtrade pair
         :return: Ticker data
         """
         trading_symbol, symbol_token, exchange = self._convert_symbol_to_smartapi(pair)
-        
+
         try:
+            # Apply rate limiting
+            self._rate_limit('ltpData')
+
             # Smart API uses LTP endpoint
             response = self._smart_api.ltpData(exchange, trading_symbol, symbol_token)
             
@@ -334,14 +326,17 @@ class Smartapi(Exchange):
     def fetch_order_book(self, pair: str, limit: int = 5) -> OrderBook:
         """
         Fetch order book (market depth) for a pair.
-        
+
         :param pair: Freqtrade pair
         :param limit: Depth limit
         :return: Order book data
         """
         trading_symbol, symbol_token, exchange = self._convert_symbol_to_smartapi(pair)
-        
+
         try:
+            # Apply rate limiting
+            self._rate_limit('getMarketData')
+
             response = self._smart_api.getMarketData(
                 mode="FULL",
                 exchangeTokens={exchange: [symbol_token]}
@@ -408,8 +403,11 @@ class Smartapi(Exchange):
             from_date = datetime.now() - timedelta(days=7)
             
         to_date = datetime.now()
-        
+
         try:
+            # Apply rate limiting
+            self._rate_limit('getCandleData')
+
             params = {
                 "exchange": exchange,
                 "symboltoken": symbol_token,
@@ -510,8 +508,11 @@ class Smartapi(Exchange):
             "stoploss": "0",
             "quantity": str(int(amount))
         }
-        
+
         try:
+            # Apply rate limiting
+            self._rate_limit('placeOrder')
+
             order_id = self._smart_api.placeOrder(order_params)
             
             return {
@@ -545,6 +546,9 @@ class Smartapi(Exchange):
         :return: Order data
         """
         try:
+            # Apply rate limiting
+            self._rate_limit('orderBook')
+
             response = self._smart_api.orderBook()
             
             if not response.get('status', False):
@@ -603,6 +607,9 @@ class Smartapi(Exchange):
         :return: Order data
         """
         try:
+            # Apply rate limiting
+            self._rate_limit('cancelOrder')
+
             response = self._smart_api.cancelOrder(
                 order_id=order_id,
                 variety="NORMAL"
@@ -617,6 +624,67 @@ class Smartapi(Exchange):
         except Exception as e:
             raise ExchangeError(f"Failed to cancel order {order_id}: {e}")
 
+    def fetch_orders(self, pair: str, since: Optional[int] = None) -> List[dict]:
+        """
+        Fetch all orders for a pair.
+
+        :param pair: Freqtrade pair
+        :param since: Timestamp in milliseconds
+        :return: List of orders
+        """
+        try:
+            # Apply rate limiting
+            self._rate_limit('orderBook')
+
+            response = self._smart_api.orderBook()
+
+            if not response.get('status', False):
+                logger.warning(f"Failed to fetch orders: {response}")
+                return []
+
+            orders = response.get('data', [])
+            result = []
+
+            for order in orders:
+                order_pair = order.get('tradingsymbol', '') + '/INR'
+                if pair and order_pair != pair:
+                    continue
+
+                timestamp = None  # SmartAPI doesn't provide timestamp in order book
+                if since and timestamp and timestamp < since:
+                    continue
+
+                result.append({
+                    'id': order.get('orderid'),
+                    'timestamp': timestamp,
+                    'datetime': order.get('updatetime'),
+                    'symbol': order_pair,
+                    'type': order.get('ordertype', '').lower(),
+                    'side': order.get('transactiontype', '').lower(),
+                    'price': float(order.get('price', 0)),
+                    'amount': float(order.get('quantity', 0)),
+                    'filled': float(order.get('filledshares', 0)),
+                    'remaining': float(order.get('unfilledshares', 0)),
+                    'status': order.get('status', '').lower(),
+                    'info': order,
+                })
+
+            return result
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch orders for {pair}: {e}")
+            return []
+
+    def fetch_open_orders(self, pair: Optional[str] = None) -> List[dict]:
+        """
+        Fetch open orders.
+
+        :param pair: Freqtrade pair (None for all pairs)
+        :return: List of open orders
+        """
+        all_orders = self.fetch_orders(pair or '', since=None)
+        return [o for o in all_orders if o['status'] in ['open', 'pending']]
+
     def fetch_balance(self) -> dict:
         """
         Fetch account balance.
@@ -624,6 +692,9 @@ class Smartapi(Exchange):
         :return: Balance data
         """
         try:
+            # Apply rate limiting
+            self._rate_limit('rmsLimit')
+
             response = self._smart_api.rmsLimit()
             
             if not response.get('status', False):
@@ -752,19 +823,8 @@ class Smartapi(Exchange):
     def is_market_open(self) -> bool:
         """
         Check if NSE market is currently open.
-        
+
         :return: True if market is open
         """
-        now = datetime.now()
-        
-        # Check if it's a weekday
-        if now.weekday() > 4:  # Saturday or Sunday
-            return False
-            
-        # Check market hours
-        market_open = datetime.strptime(self.NSE_MARKET_OPEN, '%H:%M').time()
-        market_close = datetime.strptime(self.NSE_MARKET_CLOSE, '%H:%M').time()
-        
-        current_time = now.time()
-        
-        return market_open <= current_time <= market_close
+        nse_calendar = get_nse_calendar()
+        return nse_calendar.is_market_open()

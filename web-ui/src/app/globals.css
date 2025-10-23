@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+
+    --radius: 0.5rem;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(31, 41, 55, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.8);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.9);
+}
+
+/* Smooth transitions */
+* {
+  @apply transition-colors duration-150;
+}
+
+/* Card glow effect */
+.card-glow {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+}
+
+.card-glow:hover {
+  box-shadow: 0 0 30px rgba(59, 130, 246, 0.15);
+}
+
+/* Pulse animation for live indicators */
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Number transitions */
+.number-transition {
+  transition: all 0.3s ease-in-out;
+}
+
+/* Profit/Loss colors */
+.profit-positive {
+  @apply text-green-500;
+}
+
+.profit-negative {
+  @apply text-red-500;
+}
+
+.profit-neutral {
+  @apply text-gray-400;
+}
+
+/* Status badges */
+.status-running {
+  @apply bg-green-500/10 text-green-500 border border-green-500/30;
+}
+
+.status-stopped {
+  @apply bg-red-500/10 text-red-500 border border-red-500/30;
+}
+
+.status-paused {
+  @apply bg-yellow-500/10 text-yellow-500 border border-yellow-500/30;
+}
+
+/* Trade direction badges */
+.trade-long {
+  @apply bg-green-500/10 text-green-400 border border-green-500/30;
+}
+
+.trade-short {
+  @apply bg-red-500/10 text-red-400 border border-red-500/30;
+}
