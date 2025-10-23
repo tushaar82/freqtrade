@@ -828,3 +828,56 @@ class Smartapi(CustomExchange):
         """
         nse_calendar = get_nse_calendar()
         return nse_calendar.is_market_open()
+    
+    def get_proxy_coin(self) -> str:
+        """
+        Get the proxy coin for the given coin.
+        Falls back to the stake currency if no proxy coin is found.
+        
+        :return: Proxy coin or stake currency
+        """
+        return self._config.get("stake_currency", "INR")
+    
+    def market_is_tradable(self, market: dict[str, Any]) -> bool:
+        """
+        Check if the market symbol is tradable by Freqtrade.
+        For SmartAPI, all markets in the whitelist are tradable.
+        
+        :param market: Market dictionary
+        :return: True if tradable
+        """
+        return (
+            market.get("quote") is not None
+            and market.get("base") is not None
+            and market.get("active", True) is True
+            and (self.trading_mode == TradingMode.SPOT and market.get("spot", True))
+        )
+    
+    def get_pair_quote_currency(self, pair: str) -> str:
+        """
+        Return a pair's quote currency (base/quote).
+        
+        :param pair: Pair to get quote currency for
+        :return: Quote currency
+        """
+        return self._markets.get(pair, {}).get("quote", "INR")
+    
+    def ws_connection_reset(self):
+        """
+        Called at regular intervals to reset the websocket connection.
+        SmartAPI doesn't use websocket in this implementation, so this is a no-op.
+        """
+        pass
+    
+    def klines(self, pair_interval: tuple, copy: bool = True) -> DataFrame:
+        """
+        Get cached klines data for a pair and timeframe.
+        
+        :param pair_interval: Tuple of (pair, timeframe, candle_type)
+        :param copy: Return a copy of the dataframe
+        :return: DataFrame with OHLCV data
+        """
+        if pair_interval in self._klines:
+            return self._klines[pair_interval].copy() if copy else self._klines[pair_interval]
+        else:
+            return DataFrame()

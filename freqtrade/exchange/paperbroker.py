@@ -17,6 +17,7 @@ from freqtrade.enums import CandleType, MarginMode, TradingMode
 from freqtrade.exceptions import ExchangeError, InsufficientFundsError, InvalidOrderException
 from freqtrade.exchange import Exchange
 from freqtrade.exchange.exchange_types import FtHas, OrderBook, Ticker
+from freqtrade.exchange.symbol_mapper import get_symbol_mapper
 
 
 logger = logging.getLogger(__name__)
@@ -161,6 +162,10 @@ class Paperbroker(Exchange):
         
         # Note: Position restore happens later in startup() when database is ready
         self._positions_restored = False
+        
+        # Initialize symbol mapper
+        symbol_mapping_path = config.get('exchange', {}).get('symbol_mapping_file')
+        self._symbol_mapper = get_symbol_mapper(symbol_mapping_path)
         
         logger.info(
             f"Paper Broker initialized with balance: {self._initial_balance} "

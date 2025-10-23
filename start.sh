@@ -101,5 +101,5 @@ else
     echo "Press Ctrl+C to stop"
     echo ""
 
-    freqtrade trade --config "$CONFIG" --strategy "$STRATEGY"
+    ./venv/bin/freqtrade trade --config "$CONFIG" --strategy "$STRATEGY"
 fi

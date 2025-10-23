@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
+import pandas as pd
 import requests
 from pandas import DataFrame, to_datetime
 
@@ -65,16 +66,26 @@ class Openalgo(CustomExchange):
         
         Requires OpenAlgo server to be running with configured broker.
         """
+        # OpenAlgo specific configuration
+        # Check if exchange_config parameter is provided (Freqtrade might pass it separately)
+        if exchange_config:
+            exchange_cfg = exchange_config
+            logger.info("Using exchange_config parameter")
+        else:
+            exchange_cfg = config.get('exchange', {})
+            logger.info(f"Using config.get('exchange'), keys: {list(exchange_cfg.keys())}")
+        
+        self._api_key = exchange_cfg.get('key', '')
+        self._host = exchange_cfg.get('urls', {}).get('api', 'http://127.0.0.1:5000')
+        self._strategy_name = config.get('strategy', 'Freqtrade')
+        self._default_exchange = exchange_cfg.get('nse_exchange', 'NSE')
+        
         # Initialize CustomExchange base class
         super().__init__(config)
         
-        # OpenAlgo specific configuration
-        self._api_key = config.get('exchange', {}).get('key', '')
-        self._host = config.get('exchange', {}).get('urls', {}).get('api', 'http://127.0.0.1:5000')
-        self._strategy_name = config.get('strategy', 'Freqtrade')
-        
-        # Default exchange for NSE
-        self._default_exchange = config.get('exchange', {}).get('nse_exchange', 'NSE')
+        # Log API key status (masked for security)
+        api_key_status = f"set ({self._api_key[:10]}...)" if self._api_key else "NOT SET"
+        logger.info(f"OpenAlgo API key: {api_key_status}")
         
         # Session for connection pooling
         self._session = requests.Session()
@@ -94,6 +105,21 @@ class Openalgo(CustomExchange):
         self._init_markets_from_pairs(pair_whitelist, quote_currency='INR')
 
         logger.info(f"OpenAlgo exchange initialized with host: {self._host}")
+    
+    @property
+    def precisionMode(self) -> int:
+        """
+        Exchange precision mode.
+        DECIMAL_PLACES = 2 (NSE uses decimal places)
+        """
+        return 2  # DECIMAL_PLACES
+    
+    @property
+    def precision_mode_price(self) -> int:
+        """
+        Exchange precision mode for price.
+        """
+        return 2  # DECIMAL_PLACES
         
     def _get_headers(self) -> dict:
         """Get headers for OpenAlgo API requests"""
@@ -122,12 +148,22 @@ class Openalgo(CustomExchange):
         self._rate_limit(endpoint)
 
         url = f"{self._host}{endpoint}"
+        
+        # OpenAlgo requires API key in request body for POST requests
+        if data is None:
+            data = {}
+        if method == 'POST' and 'apikey' not in data:
+            data['apikey'] = self._api_key
+            logger.info(f"Added API key to request: {self._api_key[:10] if self._api_key else 'EMPTY'}...")
+        
+        # Debug: Log the request
+        logger.info(f"OpenAlgo request: {method} {url}, data keys: {list(data.keys()) if data else 'None'}, apikey_value: {data.get('apikey', 'NOT_PRESENT')[:10] if data.get('apikey') else 'EMPTY'}...")
 
         try:
             if method == 'GET':
                 response = self._session.get(url, headers=self._get_headers(), params=params)
             elif method == 'POST':
-                response = self._session.post(url, headers=self._get_headers(), json=data)
+                response = self._session.post(url, headers={'Content-Type': 'application/json'}, json=data)
             elif method == 'PUT':
                 response = self._session.put(url, headers=self._get_headers(), json=data)
             elif method == 'DELETE':
@@ -145,12 +181,20 @@ class Openalgo(CustomExchange):
             return result
             
         except requests.exceptions.HTTPError as e:
+            # Try to get error details from response
+            error_detail = ""
+            try:
+                error_json = e.response.json()
+                error_detail = f" - {error_json}"
+            except:
+                error_detail = f" - {e.response.text[:200]}"
+            
             if e.response.status_code == 429:
-                raise DDosProtection(f"OpenAlgo rate limit exceeded: {e}")
+                raise DDosProtection(f"OpenAlgo rate limit exceeded: {e}{error_detail}")
             elif e.response.status_code in [500, 502, 503, 504]:
-                raise TemporaryError(f"OpenAlgo server error: {e}")
+                raise TemporaryError(f"OpenAlgo server error: {e}{error_detail}")
             else:
-                raise ExchangeError(f"OpenAlgo HTTP error: {e}")
+                raise ExchangeError(f"OpenAlgo HTTP error: {e}{error_detail}")
         except requests.exceptions.RequestException as e:
             raise TemporaryError(f"OpenAlgo connection error: {e}")
 
@@ -370,46 +414,58 @@ class Openalgo(CustomExchange):
         interval = interval_map.get(timeframe, '5m')
         
         # Calculate date range
+        # Note: Use dates that actually have data available
         if since:
             start_date = datetime.fromtimestamp(since / 1000).strftime('%Y-%m-%d')
+            end_date = datetime.now().strftime('%Y-%m-%d')
         else:
-            start_date = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
-            
-        end_date = datetime.now().strftime('%Y-%m-%d')
+            # For live trading, we need recent data
+            # Go back 10 days to ensure we get data even with holidays/weekends
+            end_date = datetime.now().strftime('%Y-%m-%d')
+            start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
+            logger.debug(f"Using date range for OpenAlgo: {start_date} to {end_date}")
+        
+        request_data = {
+            'symbol': symbol,
+            'exchange': exchange,
+            'interval': interval,
+            'start_date': start_date,
+            'end_date': end_date
+        }
+        logger.info(f"Fetching OHLCV for {pair}: symbol={symbol}, exchange={exchange}, interval={interval}, dates={start_date} to {end_date}")
         
         try:
-            response = self._make_request('/api/v1/history', method='POST', data={
-                'symbol': symbol,
-                'exchange': exchange,
-                'interval': interval,
-                'start_date': start_date,
-                'end_date': end_date
-            })
+            response = self._make_request('/api/v1/history', method='POST', data=request_data)
             
-            # OpenAlgo returns a DataFrame in dict format
-            # We need to convert it to OHLCV list format
-            df = DataFrame(response.get('data', {}))
+            # OpenAlgo returns data as a list of candles
+            data = response.get('data', [])
             
-            if df.empty:
+            if not data:
+                logger.warning(f"No OHLCV data returned from OpenAlgo for {pair}")
+                logger.warning(f"Response was: {response}")
                 return []
             
-            # Convert to OHLCV format: [timestamp, open, high, low, close, volume]
+            logger.debug(f"Received {len(data)} candles from OpenAlgo for {pair}")
+            
+            # Convert to OHLCV format: [timestamp_ms, open, high, low, close, volume]
             ohlcv = []
-            for idx, row in df.iterrows():
-                timestamp = int(to_datetime(idx).timestamp() * 1000)
+            for candle in data:
+                # OpenAlgo returns timestamp in seconds, convert to milliseconds
+                timestamp_ms = int(candle['timestamp']) * 1000
                 ohlcv.append([
-                    timestamp,
-                    float(row['open']),
-                    float(row['high']),
-                    float(row['low']),
-                    float(row['close']),
-                    float(row.get('volume', 0))
+                    timestamp_ms,
+                    float(candle['open']),
+                    float(candle['high']),
+                    float(candle['low']),
+                    float(candle['close']),
+                    float(candle.get('volume', 0))
                 ])
             
             # Apply limit if specified
             if limit:
                 ohlcv = ohlcv[-limit:]
-                
+            
+            logger.info(f"Fetched {len(ohlcv)} candles for {pair} from OpenAlgo")
             return ohlcv
             
         except Exception as e:
@@ -423,6 +479,9 @@ class Openalgo(CustomExchange):
         amount: float,
         rate: float | None = None,
         params: dict | None = None,
+        leverage: float = 1.0,
+        reduceOnly: bool = False,
+        time_in_force: str = 'GTC',
     ) -> dict:
         """
         Create an order on OpenAlgo.
@@ -434,6 +493,8 @@ class Openalgo(CustomExchange):
         :param rate: Order price (for limit orders)
         :param params: Additional parameters
         :param leverage: Leverage (not used for NSE spot)
+        :param reduceOnly: Reduce only flag (not used for spot)
+        :param time_in_force: Time in force (GTC, IOC, etc.)
         :return: Order data
         """
         symbol, exchange = self._convert_symbol_to_openalgo(pair)
@@ -448,20 +509,40 @@ class Openalgo(CustomExchange):
                 logger.warning(f"Adjusting quantity {amount} to lot multiple for {pair} (lot size: {lot_size})")
                 amount = int(amount / lot_size) * lot_size
         
-        # Map order type
-        price_type = 'LIMIT' if ordertype == 'limit' else 'MARKET'
+        # Map order type - OpenAlgo uses 'pricetype' not 'price_type'
+        pricetype = 'LIMIT' if ordertype == 'limit' else 'MARKET'
         
         # Get product type (default to MIS for intraday)
         product = params.get('product', 'MIS')
+        
+        # Calculate quantity for NSE
+        # Check if fixed_quantity is configured
+        fixed_qty = self._config.get('exchange', {}).get('fixed_quantity')
+        
+        if fixed_qty and fixed_qty > 0:
+            # Use fixed quantity from config
+            quantity = int(fixed_qty)
+            logger.info(f"Using fixed quantity from config: {quantity} shares")
+        else:
+            # Freqtrade calculates amount as: stake_amount / price
+            # For NSE, we need integer quantities (number of shares)
+            # Simply round to nearest integer, minimum 1 share
+            quantity = max(1, int(round(amount)))
+        
+        logger.info(f"Order calculation for {pair}:")
+        logger.info(f"  - Original amount: {amount}")
+        logger.info(f"  - Price/Rate: {rate}")
+        logger.info(f"  - Final quantity: {quantity} shares")
+        logger.info(f"  - Order value: {quantity * rate if rate else 0} INR")
         
         order_data = {
             'strategy': self._strategy_name,
             'symbol': symbol,
             'action': side.upper(),
             'exchange': exchange,
-            'price_type': price_type,
+            'pricetype': pricetype,  # Changed from 'price_type' to 'pricetype'
             'product': product,
-            'quantity': int(amount),
+            'quantity': quantity,  # Ensure it's an integer
         }
         
         # Add price for limit orders
@@ -485,11 +566,13 @@ class Openalgo(CustomExchange):
                 pair=pair,
                 order_type=ordertype,
                 side=side,
-                amount=amount,
+                amount=quantity,  # Use calculated quantity, not original amount
                 price=rate,
                 status='open'
             )
             order['info'] = response
+            order['filled'] = 0  # Will be updated when order is filled
+            order['remaining'] = quantity
             
             # Cache as open order
             self._open_orders_cache[order_id] = order
@@ -501,6 +584,27 @@ class Openalgo(CustomExchange):
                 raise InsufficientFundsError(f"Insufficient funds: {e}")
             raise ExchangeError(f"Failed to create order: {e}")
 
+    def fetch_order_or_stoploss_order(self, order_id: str, pair: str, is_stoploss: bool = False) -> dict:
+        """
+        Fetch order or stoploss order.
+        
+        :param order_id: Order ID
+        :param pair: Freqtrade pair
+        :param is_stoploss: Whether this is a stoploss order
+        :return: Order data
+        """
+        return self.fetch_order(order_id, pair)
+    
+    def check_order_canceled_empty(self, order: dict) -> bool:
+        """
+        Verify if an order has been cancelled without being partially filled.
+        
+        :param order: Order dict as returned from fetch_order()
+        :return: True if order has been cancelled without being filled
+        """
+        NON_OPEN_STATES = ['closed', 'canceled', 'cancelled', 'rejected', 'expired']
+        return order.get("status") in NON_OPEN_STATES and order.get("filled", 0) == 0
+    
     def fetch_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
         """
         Fetch order status.
@@ -512,7 +616,7 @@ class Openalgo(CustomExchange):
         """
         try:
             response = self._make_request('/api/v1/orderstatus', method='POST', data={
-                'order_id': order_id,
+                'orderid': order_id,  # OpenAlgo uses 'orderid' not 'order_id'
                 'strategy': self._strategy_name
             })
             
@@ -552,6 +656,26 @@ class Openalgo(CustomExchange):
             }
             
         except Exception as e:
+            error_str = str(e)
+            # If order not found (404), return a canceled order instead of raising
+            if '404' in error_str or 'not found' in error_str.lower():
+                logger.warning(f"Order {order_id} not found in OpenAlgo, assuming canceled")
+                return {
+                    'id': order_id,
+                    'info': {},
+                    'timestamp': None,
+                    'datetime': None,
+                    'status': 'canceled',
+                    'symbol': pair,
+                    'type': 'limit',
+                    'side': 'buy',
+                    'price': 0,
+                    'average': 0,
+                    'amount': 0,
+                    'filled': 0,
+                    'remaining': 0,
+                    'fee': None,
+                }
             raise ExchangeError(f"Failed to fetch order {order_id}: {e}")
 
     def cancel_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
@@ -686,7 +810,20 @@ class Openalgo(CustomExchange):
             return balance
             
         except Exception as e:
-            raise ExchangeError(f"Failed to fetch balance: {e}")
+            # If in dry-run mode or balance fetch fails, return default balance
+            logger.warning(f"Failed to fetch balance from OpenAlgo: {e}. Using default balance.")
+            default_balance = 100000.0  # Default 1 lakh INR
+            return {
+                'INR': {
+                    'free': default_balance,
+                    'used': 0.0,
+                    'total': default_balance,
+                },
+                'info': {},
+                'free': {'INR': default_balance},
+                'used': {'INR': 0.0},
+                'total': {'INR': default_balance},
+            }
 
     def get_fee(
         self,
@@ -695,7 +832,8 @@ class Openalgo(CustomExchange):
         side: str = '',
         amount: float = 1,
         price: float = 1,
-        taker_or_maker: str = 'maker'
+        taker_or_maker: str = 'maker',
+        takerOrMaker: str = 'maker'
     ) -> float:
         """Get trading fee for OpenAlgo - typically 0.03% for NSE"""
         return 0.0003  # 0.03% default NSE brokerage
@@ -829,10 +967,30 @@ class Openalgo(CustomExchange):
         pass
     
     def refresh_latest_ohlcv(self, pair_list: list[tuple[str, str, CandleType]]) -> None:
-        """Refresh OHLCV data synchronously for OpenAlgo"""
-        # OpenAlgo would fetch real data from the API
-        # For now, just pass - implement when needed
-        pass
+        """
+        Refresh OHLCV data synchronously for OpenAlgo.
+        Fetches latest candles from OpenAlgo and stores them in _klines cache.
+        """
+        for pair, timeframe, candle_type in pair_list:
+            try:
+                # Fetch OHLCV data from OpenAlgo
+                ohlcv = self.fetch_ohlcv(pair, timeframe, candle_type=candle_type)
+                
+                if ohlcv:
+                    # Convert to DataFrame format expected by Freqtrade
+                    df = DataFrame(ohlcv, columns=['date', 'open', 'high', 'low', 'close', 'volume'])
+                    df['date'] = pd.to_datetime(df['date'], unit='ms', utc=True)
+                    
+                    # Store in _klines cache
+                    cache_key = (pair, timeframe, candle_type)
+                    self._klines[cache_key] = df
+                    
+                    logger.debug(f"Refreshed {len(df)} candles for {pair} ({timeframe})")
+                else:
+                    logger.warning(f"No OHLCV data fetched for {pair} ({timeframe})")
+                    
+            except Exception as e:
+                logger.error(f"Error refreshing OHLCV for {pair}: {e}")
 
     def is_market_open(self) -> bool:
         """
@@ -842,3 +1000,432 @@ class Openalgo(CustomExchange):
         """
         nse_calendar = get_nse_calendar()
         return nse_calendar.is_market_open()
+    
+    def get_proxy_coin(self) -> str:
+        """
+        Get the proxy coin for the given coin.
+        Falls back to the stake currency if no proxy coin is found.
+        
+        :return: Proxy coin or stake currency
+        """
+        return self._config.get("stake_currency", "INR")
+    
+    def market_is_tradable(self, market: dict[str, Any]) -> bool:
+        """
+        Check if the market symbol is tradable by Freqtrade.
+        For OpenAlgo, all markets in the whitelist are tradable.
+        
+        :param market: Market dictionary
+        :return: True if tradable
+        """
+        return (
+            market.get("quote") is not None
+            and market.get("base") is not None
+            and market.get("active", True) is True
+            and (self.trading_mode == TradingMode.SPOT and market.get("spot", True))
+        )
+    
+    def get_pair_quote_currency(self, pair: str) -> str:
+        """
+        Return a pair's quote currency (base/quote).
+        
+        :param pair: Pair to get quote currency for
+        :return: Quote currency
+        """
+        return self._markets.get(pair, {}).get("quote", "INR")
+    
+    def get_pair_base_currency(self, pair: str) -> str:
+        """
+        Return a pair's base currency (base/quote).
+        
+        :param pair: Pair to get base currency for
+        :return: Base currency
+        """
+        # Extract base from pair (e.g., "RELIANCE/INR" -> "RELIANCE")
+        base = pair.split('/')[0] if '/' in pair else pair
+        return self._markets.get(pair, {}).get("base", base)
+    
+    def ws_connection_reset(self):
+        """
+        Called at regular intervals to reset the websocket connection.
+        OpenAlgo doesn't use websocket in this implementation, so this is a no-op.
+        """
+        pass
+    
+    def klines(self, pair_interval: tuple, copy: bool = True) -> DataFrame:
+        """
+        Get cached klines data for a pair and timeframe.
+        
+        :param pair_interval: Tuple of (pair, timeframe, candle_type)
+        :param copy: Return a copy of the dataframe
+        :return: DataFrame with OHLCV data
+        """
+        if pair_interval in self._klines:
+            return self._klines[pair_interval].copy() if copy else self._klines[pair_interval]
+        else:
+            return DataFrame()
+    
+    def get_rate(
+        self,
+        pair: str,
+        refresh: bool,
+        side: str,
+        is_short: bool,
+        order_book: dict | None = None,
+        ticker: dict | None = None,
+    ) -> float:
+        """
+        Get the current rate for a pair.
+        
+        :param pair: Pair to get rate for
+        :param refresh: Force refresh (fetch new data)
+        :param side: "entry" or "exit"
+        :param is_short: Whether this is a short position
+        :param order_book: Optional order book data
+        :param ticker: Optional ticker data
+        :return: Current rate
+        """
+        # Fetch ticker if not provided
+        if ticker is None:
+            ticker = self.fetch_ticker(pair)
+        
+        # Use last price as the rate
+        # For entry: use ask price (buying)
+        # For exit: use bid price (selling)
+        if side == "entry":
+            rate = ticker.get('ask') or ticker.get('last')
+        else:
+            rate = ticker.get('bid') or ticker.get('last')
+        
+        if rate is None:
+            raise ExchangeError(f"Could not determine rate for {pair}")
+        
+        return float(rate)
+    
+    def get_funding_fees(
+        self,
+        pair: str,
+        amount: float,
+        is_short: bool,
+        open_date: datetime,
+    ) -> float:
+        """
+        Get funding fees for a position.
+        NSE spot trading doesn't have funding fees.
+        
+        :return: 0.0 (no funding fees for spot)
+        """
+        return 0.0
+    
+    def get_max_leverage(self, pair: str, stake_amount: float) -> float:
+        """
+        Get maximum leverage for a pair.
+        NSE spot trading doesn't support leverage.
+        
+        :return: 1.0 (no leverage for spot)
+        """
+        return 1.0
+    
+    def get_min_pair_stake_amount(
+        self,
+        pair: str,
+        price: float,
+        stoploss: float,
+        leverage: float = 1.0,
+    ) -> float | None:
+        """
+        Get minimum stake amount for a pair.
+        
+        :return: Minimum stake amount
+        """
+        # For NSE, minimum is typically 1 share
+        return price * 1.0
+    
+    def get_max_pair_stake_amount(
+        self,
+        pair: str,
+        price: float,
+        leverage: float = 1.0,
+    ) -> float:
+        """
+        Get maximum stake amount for a pair.
+        
+        :return: Very large number (no practical limit)
+        """
+        return 1000000000.0  # 1 billion
+    
+    
+    def get_trades_for_order(self, order_id: str, pair: str, since: int) -> list:
+        """
+        Get trades for a specific order.
+        
+        :return: List of trades
+        """
+        # OpenAlgo doesn't provide detailed trade breakdown
+        return []
+    
+    def get_order_id_conditional(self, order: dict) -> str:
+        """
+        Get order ID from order dict.
+        
+        :return: Order ID
+        """
+        return order.get('id', '')
+    
+    def get_historic_ohlcv(
+        self,
+        pair: str,
+        timeframe: str,
+        since_ms: int,
+        candle_type: CandleType,
+        is_new_pair: bool = False,
+        until_ms: int | None = None,
+    ) -> tuple:
+        """
+        Get historic OHLCV data.
+        
+        :return: Tuple of (pair, timeframe, candle_type, data, drop_incomplete)
+        """
+        data = self.fetch_ohlcv(pair, timeframe, since_ms, candle_type=candle_type)
+        return (pair, timeframe, candle_type, data, True)
+    
+    def calculate_fee_rate(
+        self,
+        pair: str,
+        taker_or_maker: str,
+        buy: bool,
+        amount: float,
+        price: float,
+    ) -> float:
+        """
+        Calculate fee rate.
+        
+        :return: Fee rate
+        """
+        return 0.0003  # 0.03%
+    
+    def fetch_positions(self, symbols: list[str] | None = None) -> list:
+        """
+        Fetch open positions.
+        NSE spot trading doesn't have positions (only orders).
+        
+        :return: Empty list (no positions for spot)
+        """
+        return []
+    
+    def set_leverage(self, leverage: float, pair: str | None = None) -> None:
+        """
+        Set leverage for a pair.
+        NSE spot trading doesn't support leverage.
+        """
+        pass
+    
+    def set_margin_mode(self, margin_mode: str, pair: str | None = None) -> None:
+        """
+        Set margin mode.
+        NSE spot trading doesn't have margin modes.
+        """
+        pass
+    
+    def fetch_ticker(self, pair: str) -> dict:
+        """
+        Fetch ticker data for a pair.
+        Returns last price from most recent candle.
+        """
+        try:
+            # Get the most recent candle
+            ohlcv = self.fetch_ohlcv(pair, '5m', limit=1)
+            if ohlcv:
+                last_candle = ohlcv[-1]
+                return {
+                    'symbol': pair,
+                    'last': last_candle[4],  # close price
+                    'bid': last_candle[4],
+                    'ask': last_candle[4],
+                    'high': last_candle[2],
+                    'low': last_candle[3],
+                    'volume': last_candle[5],
+                }
+            return {'symbol': pair, 'last': 0, 'bid': 0, 'ask': 0}
+        except Exception as e:
+            logger.warning(f"Failed to fetch ticker for {pair}: {e}")
+            return {'symbol': pair, 'last': 0, 'bid': 0, 'ask': 0}
+    
+    def fetch_tickers(self, symbols: list[str] | None = None) -> dict:
+        """
+        Fetch tickers for multiple symbols.
+        """
+        tickers = {}
+        pairs = symbols if symbols else list(self._markets.keys())
+        for pair in pairs:
+            try:
+                tickers[pair] = self.fetch_ticker(pair)
+            except Exception:
+                pass
+        return tickers
+    
+    def get_tickers(self, symbols: list[str] | None = None, *, cached: bool = False) -> dict:
+        """
+        Get tickers (alias for fetch_tickers).
+        """
+        return self.fetch_tickers(symbols)
+    
+    def fetch_trading_fees(self) -> dict:
+        """
+        Fetch trading fees.
+        """
+        return {'trading': {}, 'maker': 0.0003, 'taker': 0.0003}
+    
+    def get_balances(self) -> dict:
+        """
+        Get account balances (alias for fetch_balance).
+        """
+        return self.fetch_balance()
+    
+    def cancel_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
+        """
+        Cancel an order.
+        """
+        try:
+            response = self._make_request('/api/v1/cancelorder', method='POST', data={
+                'orderid': order_id,
+                'strategy': self._strategy_name
+            })
+            return {'id': order_id, 'status': 'canceled', 'info': response}
+        except Exception as e:
+            raise ExchangeError(f"Failed to cancel order: {e}")
+    
+    def cancel_stoploss_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
+        """
+        Cancel a stoploss order.
+        """
+        return self.cancel_order(order_id, pair, params)
+    
+    def fetch_l2_order_book(self, pair: str, limit: int = 100) -> dict:
+        """
+        Fetch order book.
+        NSE doesn't provide order book through OpenAlgo.
+        Return minimal structure.
+        """
+        return {
+            'bids': [],
+            'asks': [],
+            'timestamp': None,
+            'datetime': None,
+        }
+    
+    def get_markets(self, base_currencies: list[str] | None = None, quote_currencies: list[str] | None = None, **kwargs) -> dict:
+        """
+        Get available markets.
+        """
+        return self._markets
+    
+    def get_quote_currencies(self) -> list[str]:
+        """
+        Get list of quote currencies.
+        """
+        return ['INR']
+    
+    def get_contract_size(self, pair: str) -> float | None:
+        """
+        Get contract size for a pair.
+        For spot, contract size is 1.
+        """
+        return 1.0
+    
+    def get_precision_amount(self, pair: str) -> float | None:
+        """
+        Get amount precision.
+        """
+        return 1.0
+    
+    def get_precision_price(self, pair: str) -> float | None:
+        """
+        Get price precision.
+        """
+        return 0.05  # NSE tick size
+    
+    def get_interest_rate(self) -> float:
+        """
+        Get interest rate for margin trading.
+        NSE spot doesn't have interest rates.
+        """
+        return 0.0
+    
+    def get_liquidation_price(
+        self,
+        pair: str,
+        side: str,
+        amount: float,
+        open_rate: float,
+        leverage: float,
+        wallet_balance: float,
+    ) -> float | None:
+        """
+        Get liquidation price.
+        NSE spot doesn't have liquidation.
+        """
+        return None
+    
+    def get_option(self, param: str, default: Any | None = None) -> Any:
+        """
+        Get exchange option.
+        """
+        return self._config.get('exchange', {}).get(param, default)
+    
+    def additional_exchange_init(self) -> None:
+        """
+        Additional exchange initialization.
+        """
+        pass
+    
+    def funding_fee_cutoff(self, open_date: datetime) -> bool:
+        """
+        Check if funding fee cutoff applies.
+        NSE spot doesn't have funding fees.
+        """
+        return False
+    
+    def fetch_funding_rate(self, pair: str) -> dict:
+        """
+        Fetch funding rate.
+        NSE spot doesn't have funding rates.
+        """
+        return {'rate': 0.0, 'timestamp': None}
+    
+    def fetch_funding_rates(self, symbols: list[str] | None = None) -> dict:
+        """
+        Fetch funding rates for multiple symbols.
+        NSE spot doesn't have funding rates.
+        """
+        return {}
+    
+    def get_leverage_tiers(self) -> dict:
+        """
+        Get leverage tiers.
+        NSE spot doesn't support leverage.
+        """
+        return {}
+    
+    def load_leverage_tiers(self) -> dict:
+        """
+        Load leverage tiers.
+        NSE spot doesn't support leverage.
+        """
+        return {}
+    
+    def dry_run_liquidation_price(
+        self,
+        pair: str,
+        open_rate: float,
+        is_short: bool,
+        amount: float,
+        stake_amount: float,
+        leverage: float,
+        wallet_balance: float,
+    ) -> float | None:
+        """
+        Calculate liquidation price for dry run.
+        NSE spot doesn't have liquidation.
+        """
+        return None

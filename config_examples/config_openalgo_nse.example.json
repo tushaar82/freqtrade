@@ -31,7 +31,7 @@
     },
     "exchange": {
         "name": "openalgo",
-        "key": "your_openalgo_api_key",
+        "key": "6f43b2f2eafd8b5830d6ffe6ff3977a388b9e280a3be36f56e2e5f0918215d83",
         "secret": "",
         "urls": {
             "api": "http://127.0.0.1:5000"

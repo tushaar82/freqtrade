@@ -1,0 +1,282 @@
+{
+  "NIFTY50": {
+    "openalgo": {
+      "symbol": "NIFTY 50",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "NIFTY 50",
+      "token": "99926000",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "NIFTY50"
+    }
+  },
+  "BANKNIFTY": {
+    "openalgo": {
+      "symbol": "NIFTY BANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "NIFTY BANK",
+      "token": "99926009",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "BANKNIFTY"
+    }
+  },
+  "FINNIFTY": {
+    "openalgo": {
+      "symbol": "NIFTY FIN SERVICE",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "NIFTY FIN SERVICE",
+      "token": "99926037",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "FINNIFTY"
+    }
+  },
+  "MIDCPNIFTY": {
+    "openalgo": {
+      "symbol": "NIFTY MID SELECT",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "NIFTY MID SELECT",
+      "token": "99926074",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "MIDCPNIFTY"
+    }
+  },
+  "RELIANCE": {
+    "openalgo": {
+      "symbol": "RELIANCE",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "RELIANCE-EQ",
+      "token": "2885",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "RELIANCE"
+    }
+  },
+  "TCS": {
+    "openalgo": {
+      "symbol": "TCS",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "TCS-EQ",
+      "token": "11536",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "TCS"
+    }
+  },
+  "INFY": {
+    "openalgo": {
+      "symbol": "INFY",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "INFY-EQ",
+      "token": "1594",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "INFY"
+    }
+  },
+  "HDFC": {
+    "openalgo": {
+      "symbol": "HDFCBANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "HDFCBANK-EQ",
+      "token": "1333",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "HDFC"
+    }
+  },
+  "SBIN": {
+    "openalgo": {
+      "symbol": "SBIN",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "SBIN-EQ",
+      "token": "3045",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "SBIN"
+    }
+  },
+  "ICICIBANK": {
+    "openalgo": {
+      "symbol": "ICICIBANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "ICICIBANK-EQ",
+      "token": "4963",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "ICICIBANK"
+    }
+  },
+  "AXISBANK": {
+    "openalgo": {
+      "symbol": "AXISBANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "AXISBANK-EQ",
+      "token": "5900",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "AXISBANK"
+    }
+  },
+  "KOTAKBANK": {
+    "openalgo": {
+      "symbol": "KOTAKBANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "KOTAKBANK-EQ",
+      "token": "1922",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "KOTAKBANK"
+    }
+  },
+  "LT": {
+    "openalgo": {
+      "symbol": "LT",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "LT-EQ",
+      "token": "11483",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "LT"
+    }
+  },
+  "WIPRO": {
+    "openalgo": {
+      "symbol": "WIPRO",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "WIPRO-EQ",
+      "token": "3787",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "WIPRO"
+    }
+  },
+  "TATAMOTORS": {
+    "openalgo": {
+      "symbol": "TATAMOTORS",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "TATAMOTORS-EQ",
+      "token": "3456",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "TATAMOTORS"
+    }
+  },
+  "HDFCBANK": {
+    "openalgo": {
+      "symbol": "HDFCBANK",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "HDFCBANK-EQ",
+      "token": "1333",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "HDFCBANK"
+    }
+  },
+  "BHARTIARTL": {
+    "openalgo": {
+      "symbol": "BHARTIARTL",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "BHARTIARTL-EQ",
+      "token": "10604",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "BHARTIARTL"
+    }
+  },
+  "ITC": {
+    "openalgo": {
+      "symbol": "ITC",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "ITC-EQ",
+      "token": "1660",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "ITC"
+    }
+  },
+  "MARUTI": {
+    "openalgo": {
+      "symbol": "MARUTI",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "MARUTI-EQ",
+      "token": "10999",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "MARUTI"
+    }
+  },
+  "TATASTEEL": {
+    "openalgo": {
+      "symbol": "TATASTEEL",
+      "exchange": "NSE"
+    },
+    "smartapi": {
+      "symbol": "TATASTEEL-EQ",
+      "token": "3499",
+      "exchange": "NSE"
+    },
+    "paperbroker": {
+      "symbol": "TATASTEEL"
+    }
+  }
+}
