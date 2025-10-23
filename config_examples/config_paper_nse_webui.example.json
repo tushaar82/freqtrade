@@ -1,0 +1,95 @@
+{
+  "max_open_trades": 5,
+  "stake_currency": "INR",
+  "stake_amount": 10000,
+  "tradable_balance_ratio": 0.99,
+  "fiat_display_currency": "INR",
+  "dry_run": false,
+  "cancel_open_orders_on_exit": false,
+
+  "trading_mode": "spot",
+  "margin_mode": "",
+
+  "unfilledtimeout": {
+    "entry": 10,
+    "exit": 10,
+    "exit_timeout_count": 0,
+    "unit": "minutes"
+  },
+
+  "entry_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1,
+    "price_last_balance": 0.0,
+    "check_depth_of_market": {
+      "enabled": false,
+      "bids_to_ask_delta": 1
+    }
+  },
+
+  "exit_pricing": {
+    "price_side": "same",
+    "use_order_book": true,
+    "order_book_top": 1
+  },
+
+  "exchange": {
+    "name": "paperbroker",
+    "initial_balance": 100000,
+    "slippage_percent": 0.05,
+    "commission_percent": 0.03,
+    "fill_probability": 0.98,
+    "nse_simulation": true,
+    "simulate_holidays": true,
+    "pair_whitelist": [
+      "RELIANCE/INR",
+      "TCS/INR",
+      "INFY/INR",
+      "HDFC/INR",
+      "SBIN/INR",
+      "NIFTY50/INR",
+      "BANKNIFTY/INR"
+    ],
+    "pair_blacklist": []
+  },
+
+  "pairlists": [
+    {
+      "method": "StaticPairList"
+    }
+  ],
+
+  "edge": {
+    "enabled": false
+  },
+
+  "api_server": {
+    "enabled": true,
+    "listen_ip_address": "0.0.0.0",
+    "listen_port": 8080,
+    "verbosity": "info",
+    "enable_openapi": true,
+    "jwt_secret_key": "your-jwt-secret-key-change-this",
+    "ws_token": "your-ws-token-change-this",
+    "CORS_origins": ["*"],
+    "username": "admin",
+    "password": "admin123"
+  },
+
+  "bot_name": "FreqtradeNSE",
+  "initial_state": "running",
+  "force_entry_enable": true,
+  "internals": {
+    "process_throttle_secs": 5
+  },
+
+  "strategy": "SampleStrategy",
+  "strategy_path": "user_data/strategies/",
+
+  "db_url": "sqlite:///user_data/tradesv3_nse_paper.dryrun.sqlite",
+  "user_data_dir": "user_data",
+
+  "dataformat_ohlcv": "json",
+  "dataformat_trades": "jsongz"
+}
