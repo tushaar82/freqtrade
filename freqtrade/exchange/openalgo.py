@@ -105,6 +105,40 @@ class Openalgo(CustomExchange):
         self._init_markets_from_pairs(pair_whitelist, quote_currency='INR')
 
         logger.info(f"OpenAlgo exchange initialized with host: {self._host}")
+        
+        # NSE trading hours
+        self._market_hours = {
+            'start': (9, 15),  # 9:15 AM
+            'end': (15, 30),   # 3:30 PM
+        }
+    
+    def is_market_open(self) -> bool:
+        """
+        Check if NSE market is currently open.
+        NSE trading hours: 9:15 AM - 3:30 PM IST, Monday-Friday
+        """
+        from datetime import datetime
+        import pytz
+        
+        # Get current time in IST
+        ist = pytz.timezone('Asia/Kolkata')
+        now = datetime.now(ist)
+        
+        # Check if weekend
+        if now.weekday() >= 5:  # Saturday = 5, Sunday = 6
+            return False
+        
+        # Check if within trading hours
+        current_time = (now.hour, now.minute)
+        start_time = self._market_hours['start']
+        end_time = self._market_hours['end']
+        
+        # Convert to minutes for easier comparison
+        current_minutes = current_time[0] * 60 + current_time[1]
+        start_minutes = start_time[0] * 60 + start_time[1]
+        end_minutes = end_time[0] * 60 + end_time[1]
+        
+        return start_minutes <= current_minutes <= end_minutes
     
     @property
     def precisionMode(self) -> int:
