@@ -280,13 +280,20 @@ class RPC:
                 if display_amount == 0 and trade.stake_amount > 0 and trade.open_rate > 0:
                     display_amount = trade.stake_amount / trade.open_rate
                 
+                # Always show absolute profit in INR instead of percentage
+                # This makes it easier to see actual profit/loss in rupees
+                if not isnan(current_profit_abs):
+                    profit_pct_display = round(current_profit_abs, 2)  # Show ₹ value
+                else:
+                    profit_pct_display = 0.0
+                
                 trade_dict.update(
                     dict(
                         amount=display_amount,  # Override with calculated amount
                         close_profit=trade.close_profit if not trade.is_open else None,
                         current_rate=current_rate,
                         profit_ratio=current_profit,
-                        profit_pct=round(current_profit * 100, 2),
+                        profit_pct=profit_pct_display,  # Show absolute value if % is too small
                         profit_abs=current_profit_abs,
                         profit_fiat=current_profit_fiat,
                         total_profit_abs=total_profit_abs,

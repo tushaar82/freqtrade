@@ -79,23 +79,22 @@ if [ "$MODE" = "trade" ]; then
     fi
     
     if [ -n "$DB_FILE" ]; then
-        # Close only trades with amount=0 (invalid trades)
+        # Close invalid trades and clean up orphaned orders
         python3 << EOF
 import sqlite3
 import os
+from datetime import datetime, timedelta
 
 if os.path.exists("$DB_FILE"):
     conn = sqlite3.connect("$DB_FILE")
     cursor = conn.cursor()
     
-    # Get count of invalid trades (amount=0)
+    # 1. Close trades with amount=0
     cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1 AND amount = 0")
-    count = cursor.fetchone()[0]
+    invalid_count = cursor.fetchone()[0]
     
-    if count > 0:
-        print(f"Found {count} invalid trade(s) with amount=0 - closing them...")
-        
-        # Close only trades with amount=0
+    if invalid_count > 0:
+        print(f"Found {invalid_count} invalid trade(s) with amount=0 - closing them...")
         cursor.execute("""
             UPDATE trades 
             SET is_open = 0, 
@@ -106,17 +105,39 @@ if os.path.exists("$DB_FILE"):
                 exit_reason = 'invalid_amount'
             WHERE is_open = 1 AND amount = 0
         """)
-        
         conn.commit()
         print(f"✓ Closed {cursor.rowcount} invalid trade(s)")
-    else:
-        print("✓ No invalid trades found")
     
-    # Show valid open trades
+    # 2. Close old trades (older than 6 hours) - likely orphaned
+    six_hours_ago = (datetime.now() - timedelta(hours=6)).strftime('%Y-%m-%d %H:%M:%S')
+    cursor.execute(f"""
+        SELECT COUNT(*) FROM trades 
+        WHERE is_open = 1 AND open_date < '{six_hours_ago}'
+    """)
+    old_count = cursor.fetchone()[0]
+    
+    if old_count > 0:
+        print(f"Found {old_count} old trade(s) (>6 hours) - closing them...")
+        cursor.execute(f"""
+            UPDATE trades 
+            SET is_open = 0, 
+                close_date = datetime('now'),
+                close_rate = open_rate,
+                close_profit = 0,
+                close_profit_abs = 0,
+                exit_reason = 'orphaned_order'
+            WHERE is_open = 1 AND open_date < '{six_hours_ago}'
+        """)
+        conn.commit()
+        print(f"✓ Closed {cursor.rowcount} old trade(s)")
+    
+    # Show remaining open trades
     cursor.execute("SELECT COUNT(*) FROM trades WHERE is_open = 1")
     valid_count = cursor.fetchone()[0]
     if valid_count > 0:
         print(f"✓ {valid_count} valid trade(s) will continue")
+    else:
+        print("✓ No open trades - clean start")
     
     conn.close()
 else:

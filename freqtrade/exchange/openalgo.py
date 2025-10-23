@@ -1254,6 +1254,25 @@ class Openalgo(CustomExchange):
         """
         return 0.0003  # 0.03%
     
+    @staticmethod
+    def order_has_fee(order: dict) -> bool:
+        """
+        Verifies if the passed in order dict has the needed keys to extract fees.
+        
+        :param order: Order dict
+        :return: True if the fee substructure contains currency and cost
+        """
+        if not isinstance(order, dict):
+            return False
+        return (
+            "fee" in order
+            and order["fee"] is not None
+            and isinstance(order["fee"], dict)
+            and (order["fee"].keys() >= {"currency", "cost"})
+            and order["fee"]["currency"] is not None
+            and order["fee"]["cost"] is not None
+        )
+    
     def fetch_positions(self, symbols: list[str] | None = None) -> list:
         """
         Fetch open positions.
@@ -1348,14 +1367,62 @@ class Openalgo(CustomExchange):
                 'strategy': self._strategy_name
             })
             return {'id': order_id, 'status': 'canceled', 'info': response}
-        except Exception as e:
-            raise ExchangeError(f"Failed to cancel order: {e}")
+        except ExchangeError as e:
+            error_msg = str(e).lower()
+            # If order is already complete/filled, don't raise error
+            if 'complete' in error_msg or 'filled' in error_msg or 'cannot cancel' in error_msg:
+                logger.info(f"Order {order_id} already complete, cannot cancel")
+                return {'id': order_id, 'status': 'closed', 'info': {'message': 'Already complete'}}
+            raise
+    
+    def cancel_order_with_result(self, order_id: str, pair: str, amount: float) -> dict:
+        """
+        Cancel an order and return the result with amount.
+        """
+        try:
+            response = self._make_request('/api/v1/cancelorder', method='POST', data={
+                'orderid': order_id,
+                'strategy': self._strategy_name
+            })
+            
+            # Return order in ccxt format
+            return {
+                'id': order_id,
+                'status': 'canceled',
+                'symbol': pair,
+                'amount': amount,
+                'filled': 0.0,
+                'remaining': amount,
+                'info': response
+            }
+        except ExchangeError as e:
+            error_msg = str(e).lower()
+            # If order is already complete/filled, return it as closed instead of raising error
+            if 'complete' in error_msg or 'filled' in error_msg or 'cannot cancel' in error_msg:
+                logger.info(f"Order {order_id} already complete, cannot cancel")
+                return {
+                    'id': order_id,
+                    'status': 'closed',  # Already filled
+                    'symbol': pair,
+                    'amount': amount,
+                    'filled': amount,
+                    'remaining': 0.0,
+                    'info': {'message': 'Order already complete'}
+                }
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            raise
     
     def cancel_stoploss_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
         """
         Cancel a stoploss order.
         """
         return self.cancel_order(order_id, pair, params)
+    
+    def cancel_stoploss_order_with_result(self, order_id: str, pair: str, amount: float) -> dict:
+        """
+        Cancel a stoploss order and return the result with amount.
+        """
+        return self.cancel_order_with_result(order_id, pair, amount)
     
     def fetch_l2_order_book(self, pair: str, limit: int = 100) -> dict:
         """
