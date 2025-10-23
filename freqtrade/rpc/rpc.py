@@ -240,7 +240,17 @@ class RPC:
                             total_profit_abs = prof.total_profit
                             total_profit_ratio = prof.total_profit_ratio
                     else:
-                        current_profit = current_profit_abs = current_profit_fiat = 0.0
+                        # No filled orders yet - but still calculate potential profit
+                        if not isnan(current_rate) and trade.stake_amount > 0 and trade.open_rate > 0:
+                            # Calculate amount from stake/rate
+                            calc_amount = trade.stake_amount / trade.open_rate
+                            # Calculate potential profit
+                            current_profit_abs = (current_rate - trade.open_rate) * calc_amount
+                            current_profit = (current_rate - trade.open_rate) / trade.open_rate
+                            logger.info(f"RPC: Trade {trade.id} no filled orders yet - showing potential profit: ₹{current_profit_abs:.2f}")
+                        else:
+                            current_profit = current_profit_abs = 0.0
+                        current_profit_fiat = 0.0
 
                 else:
                     # Closed trade ...
