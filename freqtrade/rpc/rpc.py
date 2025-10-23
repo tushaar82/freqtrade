@@ -283,7 +283,11 @@ class RPC:
                     trade.price_precision,
                     trade.precision_mode_price,
                 )
-                stoploss_current_dist_ratio = stoploss_current_dist / current_rate
+                # Avoid division by zero when current_rate is 0
+                if current_rate > 0:
+                    stoploss_current_dist_ratio = stoploss_current_dist / current_rate
+                else:
+                    stoploss_current_dist_ratio = 0.0
 
                 trade_dict = trade.to_json()
                 
