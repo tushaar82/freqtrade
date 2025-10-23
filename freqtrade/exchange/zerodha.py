@@ -20,6 +20,9 @@ from freqtrade.exceptions import (
 )
 from freqtrade.exchange.custom_exchange import CustomExchange
 from freqtrade.exchange.exchange_types import FtHas, OrderBook, Ticker
+from freqtrade.exchange.rate_limiter import BrokerRateLimits
+from freqtrade.exchange.lot_size_manager import LotSizeManager
+from freqtrade.exchange.nse_calendar import get_nse_calendar
 
 
 logger = logging.getLogger(__name__)
@@ -101,21 +104,23 @@ class Zerodha(CustomExchange):
         
         # Session management
         self._session_expiry = None
-        
-        # Rate limiting
-        self._last_request_time = 0
-        self._min_request_interval = 0.1  # 100ms between requests
-        
+
+        # Initialize rate limiter (replaces manual rate limiting)
+        self._rate_limiter = BrokerRateLimits.get_limiter('zerodha')
+
+        # Initialize lot size manager
+        self._lot_size_manager = LotSizeManager()
+
         # Login to Kite Connect
         self._login()
-        
+
         # Load instruments
         self._load_instruments()
-        
+
         # Initialize markets from pair whitelist
         pair_whitelist = config.get('exchange', {}).get('pair_whitelist', [])
         self._init_markets_from_pairs(pair_whitelist, quote_currency='INR')
-        
+
         logger.info(f"Zerodha exchange initialized for API key: {self._api_key[:8]}...")
         
     def _login(self):
@@ -226,13 +231,10 @@ class Zerodha(CustomExchange):
             next_day += timedelta(days=1)
         return next_day
 
-    def _rate_limit(self):
-        """Implement rate limiting"""
-        current_time = time.time()
-        time_since_last = current_time - self._last_request_time
-        if time_since_last < self._min_request_interval:
-            time.sleep(self._min_request_interval - time_since_last)
-        self._last_request_time = time.time()
+    def _rate_limit(self, endpoint: Optional[str] = None):
+        """Apply rate limiting before API calls"""
+        if hasattr(self, '_rate_limiter'):
+            self._rate_limiter.wait_if_needed(endpoint)
 
     def _load_instruments(self):
         """Load instrument master data from Kite"""
@@ -792,22 +794,11 @@ class Zerodha(CustomExchange):
     def is_market_open(self) -> bool:
         """
         Check if NSE market is currently open.
-        
+
         :return: True if market is open
         """
-        now = datetime.now()
-        
-        # Check if it's a weekday
-        if now.weekday() > 4:  # Saturday or Sunday
-            return False
-            
-        # Check market hours
-        market_open = datetime.strptime(self.NSE_MARKET_OPEN, '%H:%M').time()
-        market_close = datetime.strptime(self.NSE_MARKET_CLOSE, '%H:%M').time()
-        
-        current_time = now.time()
-        
-        return market_open <= current_time <= market_close
+        nse_calendar = get_nse_calendar()
+        return nse_calendar.is_market_open()
 
     def close(self) -> None:
         """Close exchange connections"""
