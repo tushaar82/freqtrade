@@ -1413,6 +1413,19 @@ class Openalgo(CustomExchange):
         """
         pass
     
+    def get_valid_pair_amount(self, pair: str, amount: float, price: float) -> float:
+        """
+        Override amount calculation for NSE.
+        Returns integer quantity based on fixed_quantity config or rounded amount.
+        """
+        fixed_qty = self._config.get('exchange', {}).get('fixed_quantity')
+        
+        if fixed_qty and fixed_qty > 0:
+            return float(fixed_qty)
+        else:
+            # Round to integer shares
+            return float(max(1, int(round(amount))))
+    
     def funding_fee_cutoff(self, open_date: datetime) -> bool:
         """
         Check if funding fee cutoff applies.
