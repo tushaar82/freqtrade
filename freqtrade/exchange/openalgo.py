@@ -41,7 +41,7 @@ class Openalgo(CustomExchange):
         "ohlcv_has_history": True,
         "ohlcv_partial_candle": True,
         "ohlcv_require_since": False,
-        "stoploss_on_exchange": False,  # OpenAlgo supports stop loss but implementation differs
+        "stoploss_on_exchange": True,  # OpenAlgo supports stop loss orders
         "order_time_in_force": ["GTC", "IOC"],
         "trades_has_history": True,
         "tickers_have_quoteVolume": True,
@@ -49,6 +49,7 @@ class Openalgo(CustomExchange):
         "tickers_have_price": True,
         "ws_enabled": True,  # OpenAlgo supports websocket
         "always_require_api_keys": True,  # OpenAlgo always requires API key
+        "trailing_stop": True,  # OpenAlgo supports trailing stop loss
     }
 
     # NSE Market Hours (IST)
@@ -99,6 +100,8 @@ class Openalgo(CustomExchange):
 
         # Order tracking
         self._open_orders_cache = {}  # Cache for open orders
+        self._open_positions = {}  # Track open positions by pair
+        self._position_to_order = {}  # Map position to entry order ID
 
         # Initialize markets from pair whitelist
         pair_whitelist = config.get('exchange', {}).get('pair_whitelist', [])
@@ -533,7 +536,44 @@ class Openalgo(CustomExchange):
         """
         symbol, exchange = self._convert_symbol_to_openalgo(pair)
         params = params or {}
-        
+
+        # Check if this is an exit order for an existing position
+        # Use closeposition API instead of placing a SELL order
+        if side.upper() == 'SELL' and pair in self._open_positions:
+            logger.info(f"🔄 Detected exit order for open position {pair}, using closeposition API")
+            try:
+                # Close the position using OpenAlgo's closeposition endpoint
+                close_response = self.close_position(pair, symbol, exchange)
+
+                # Get position details
+                position = self._open_positions.get(pair, {})
+                quantity = position.get('quantity', amount)
+
+                # Create a synthetic order response for Freqtrade
+                order_id = close_response.get('orderid', f"close_{datetime.now().timestamp()}")
+
+                order = self._create_order_response(
+                    order_id=order_id,
+                    pair=pair,
+                    order_type='market',  # closeposition acts like market order
+                    side='sell',
+                    amount=float(quantity),
+                    price=rate,
+                    status='closed'  # Position closed immediately
+                )
+                order['info'] = close_response
+                order['filled'] = float(quantity)
+                order['remaining'] = 0.0
+                order['cost'] = float(quantity * rate) if rate else 0.0
+
+                logger.info(f"✓ Position closed via API: {pair}, quantity: {quantity}")
+
+                return order
+
+            except Exception as e:
+                logger.warning(f"Failed to use closeposition API for {pair}: {e}, falling back to SELL order")
+                # Fall through to regular order placement
+
         # Check if this is an options trade and validate lot size
         instrument_type = InstrumentType.from_symbol(pair)
         if instrument_type.requires_lot_size():
@@ -618,10 +658,23 @@ class Openalgo(CustomExchange):
             logger.info(f"✓ Order created: {order_id}")
             logger.info(f"  Amount in order response: {order['amount']}")
             logger.info(f"  Filled: {order['filled']}")
-            
+
             # Cache as open order
             self._open_orders_cache[order_id] = order
-            
+
+            # Track position if this is an entry order
+            if side.upper() == 'BUY':
+                self._open_positions[pair] = {
+                    'symbol': symbol,
+                    'exchange': exchange,
+                    'quantity': quantity,
+                    'entry_price': rate,
+                    'order_id': order_id,
+                    'product': product
+                }
+                self._position_to_order[order_id] = pair
+                logger.info(f"📊 Position opened for {pair}: {quantity} @ {rate}")
+
             return order
             
         except Exception as e:
@@ -723,10 +776,49 @@ class Openalgo(CustomExchange):
                 }
             raise ExchangeError(f"Failed to fetch order {order_id}: {e}")
 
+    def close_position(self, pair: str, symbol: str = None, exchange: str = None) -> dict:
+        """
+        Close an open position using OpenAlgo's closeposition API.
+
+        :param pair: Freqtrade pair
+        :param symbol: OpenAlgo symbol (optional, will be extracted from pair)
+        :param exchange: Exchange name (optional, will be extracted from pair)
+        :return: Response data
+        """
+        if not symbol or not exchange:
+            symbol, exchange = self._convert_symbol_to_openalgo(pair)
+
+        try:
+            logger.info(f"🚪 Closing position for {pair} ({symbol} on {exchange})")
+
+            response = self._make_request('/api/v1/closeposition', method='POST', data={
+                'symbol': symbol,
+                'exchange': exchange,
+                'strategy': self._strategy_name
+            })
+
+            # Remove from position tracking
+            if pair in self._open_positions:
+                position = self._open_positions[pair]
+                order_id = position.get('order_id')
+
+                # Remove from tracking
+                del self._open_positions[pair]
+                if order_id and order_id in self._position_to_order:
+                    del self._position_to_order[order_id]
+
+                logger.info(f"✓ Position closed for {pair}")
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Failed to close position for {pair}: {e}")
+            raise ExchangeError(f"Failed to close position for {pair}: {e}")
+
     def cancel_order(self, order_id: str, pair: str, params: dict | None = None) -> dict:
         """
         Cancel an order.
-        
+
         :param order_id: Order ID
         :param pair: Freqtrade pair
         :param params: Additional parameters
@@ -737,17 +829,17 @@ class Openalgo(CustomExchange):
                 'order_id': order_id,
                 'strategy': self._strategy_name
             })
-            
+
             # Remove from open orders cache
             if order_id in self._open_orders_cache:
                 del self._open_orders_cache[order_id]
-            
+
             return {
                 'id': order_id,
                 'info': response,
                 'status': 'canceled',
             }
-            
+
         except Exception as e:
             raise ExchangeError(f"Failed to cancel order {order_id}: {e}")
 
@@ -1277,12 +1369,87 @@ class Openalgo(CustomExchange):
     
     def fetch_positions(self, symbols: list[str] | None = None) -> list:
         """
-        Fetch open positions.
-        NSE spot trading doesn't have positions (only orders).
-        
-        :return: Empty list (no positions for spot)
+        Fetch open positions from OpenAlgo.
+
+        :param symbols: List of symbols to fetch (None for all)
+        :return: List of positions
         """
-        return []
+        try:
+            response = self._make_request('/api/v1/positionbook', method='POST', data={
+                'strategy': self._strategy_name
+            })
+
+            positions_data = response.get('data', [])
+            if not isinstance(positions_data, list):
+                positions_data = [positions_data] if positions_data else []
+
+            positions = []
+            for pos_data in positions_data:
+                symbol = pos_data.get('symbol', '')
+                exchange = pos_data.get('exchange', 'NSE')
+                quantity = float(pos_data.get('quantity', 0))
+
+                if quantity == 0:
+                    continue
+
+                pair = self._convert_symbol_from_openalgo(symbol, exchange)
+
+                # Update our position tracking
+                if quantity != 0 and pair not in self._open_positions:
+                    self._open_positions[pair] = {
+                        'symbol': symbol,
+                        'exchange': exchange,
+                        'quantity': abs(quantity),
+                        'entry_price': float(pos_data.get('buyaverage', 0)),
+                        'product': pos_data.get('product', 'MIS')
+                    }
+                    logger.info(f"📊 Synced position from OpenAlgo: {pair} - {quantity}")
+
+                # Create position dict
+                position = {
+                    'symbol': pair,
+                    'side': 'long' if quantity > 0 else 'short',
+                    'contracts': abs(quantity),
+                    'contractSize': 1,
+                    'unrealizedPnl': float(pos_data.get('unrealisedprofitloss', 0)),
+                    'leverage': 1,
+                    'collateral': float(pos_data.get('buyvalue', 0)),
+                    'entryPrice': float(pos_data.get('buyaverage', 0)),
+                    'markPrice': float(pos_data.get('ltp', 0)),
+                    'info': pos_data
+                }
+                positions.append(position)
+
+            # Clean up closed positions
+            pairs_to_remove = []
+            for pair in self._open_positions:
+                found = False
+                for pos in positions:
+                    if pos['symbol'] == pair:
+                        found = True
+                        break
+                if not found:
+                    pairs_to_remove.append(pair)
+
+            for pair in pairs_to_remove:
+                logger.info(f"🧹 Removing closed position from tracking: {pair}")
+                del self._open_positions[pair]
+
+            return positions
+
+        except Exception as e:
+            logger.warning(f"Failed to fetch positions from OpenAlgo: {e}")
+            # Return cached positions if API fails
+            return [
+                {
+                    'symbol': pair,
+                    'side': 'long',
+                    'contracts': pos['quantity'],
+                    'contractSize': 1,
+                    'info': pos
+                }
+                for pair, pos in self._open_positions.items()
+            ]
     
     def set_leverage(self, leverage: float, pair: str | None = None) -> None:
         """
@@ -1584,3 +1751,157 @@ class Openalgo(CustomExchange):
         NSE spot doesn't have liquidation.
         """
         return None
+
+    def create_stoploss(
+        self,
+        pair: str,
+        amount: float,
+        stop_price: float,
+        rate: float,
+        *,
+        leverage: float = 1.0,
+        is_short: bool = False,
+    ) -> dict:
+        """
+        Create a stoploss order on OpenAlgo exchange.
+
+        :param pair: Freqtrade pair
+        :param amount: Order amount
+        :param stop_price: Trigger price for stop loss
+        :param rate: Limit price (can be same as stop_price for SL-M)
+        :param leverage: Leverage (not used for spot)
+        :param is_short: Whether this is a short position
+        :return: Order data
+        """
+        symbol, exchange = self._convert_symbol_to_openalgo(pair)
+
+        # Determine order side (for long position, stoploss is SELL)
+        side = 'SELL' if not is_short else 'BUY'
+
+        # Get quantity from position or calculate
+        if pair in self._open_positions:
+            quantity = self._open_positions[pair]['quantity']
+            product = self._open_positions[pair].get('product', 'MIS')
+        else:
+            # Calculate quantity
+            fixed_qty = self._config.get('exchange', {}).get('fixed_quantity')
+            if fixed_qty and fixed_qty > 0:
+                quantity = int(fixed_qty)
+            else:
+                quantity = max(1, int(round(amount)))
+            product = 'MIS'
+
+        logger.info(f"📉 Creating stoploss order for {pair}:")
+        logger.info(f"  Quantity: {quantity}")
+        logger.info(f"  Trigger price: {stop_price}")
+        logger.info(f"  Limit price: {rate}")
+
+        # Create stoploss order data
+        order_data = {
+            'strategy': self._strategy_name,
+            'symbol': symbol,
+            'action': side,
+            'exchange': exchange,
+            'pricetype': 'SL',  # Stop Loss order type
+            'product': product,
+            'quantity': quantity,
+            'price': str(rate),  # Limit price
+            'trigger_price': str(stop_price)  # Stop loss trigger price
+        }
+
+        try:
+            response = self._make_request('/api/v1/placeorder', method='POST', data=order_data)
+
+            order_id = response.get('orderid')
+
+            # Create order response
+            order = self._create_order_response(
+                order_id=order_id,
+                pair=pair,
+                order_type='stoploss',
+                side=side.lower(),
+                amount=float(quantity),
+                price=stop_price,
+                status='open'
+            )
+            order['info'] = response
+            order['stopPrice'] = stop_price
+            order['info']['trigger_price'] = stop_price
+
+            logger.info(f"✓ Stoploss order created: {order_id}")
+            logger.info(f"  Will trigger at: {stop_price}")
+
+            # Cache as open order
+            self._open_orders_cache[order_id] = order
+
+            return order
+
+        except Exception as e:
+            raise ExchangeError(f"Failed to create stoploss order: {e}")
+
+    def stoploss_adjust(self, stop_loss: float, order: dict, side: str) -> bool:
+        """
+        Verify if stoploss needs to be adjusted (for trailing stoploss).
+
+        :param stop_loss: New stoploss value
+        :param order: Current stoploss order
+        :param side: Trade side
+        :return: True if adjustment is needed
+        """
+        current_stop_price = order.get('stopPrice') or order.get('info', {}).get('trigger_price')
+
+        if not current_stop_price:
+            return True
+
+        current_stop = float(current_stop_price)
+
+        # For long positions, adjust if new stop is higher (trailing up)
+        # For short positions, adjust if new stop is lower (trailing down)
+        if side == 'buy':
+            return stop_loss > current_stop
+        else:
+            return stop_loss < current_stop
+
+    def cancel_stoploss_order_with_result(self, order_id: str, pair: str, amount: float) -> dict:
+        """
+        Cancel a stoploss order and return the result.
+
+        :param order_id: Order ID
+        :param pair: Freqtrade pair
+        :param amount: Order amount
+        :return: Canceled order data
+        """
+        try:
+            response = self._make_request('/api/v1/cancelorder', method='POST', data={
+                'orderid': order_id,
+                'strategy': self._strategy_name
+            })
+
+            # Remove from cache
+            if order_id in self._open_orders_cache:
+                del self._open_orders_cache[order_id]
+
+            return {
+                'id': order_id,
+                'status': 'canceled',
+                'symbol': pair,
+                'amount': amount,
+                'filled': 0.0,
+                'remaining': amount,
+                'info': response
+            }
+
+        except ExchangeError as e:
+            error_msg = str(e).lower()
+            if 'complete' in error_msg or 'filled' in error_msg:
+                logger.info(f"Stoploss order {order_id} already triggered")
+                return {
+                    'id': order_id,
+                    'status': 'closed',
+                    'symbol': pair,
+                    'amount': amount,
+                    'filled': amount,
+                    'remaining': 0.0,
+                    'info': {'message': 'Already triggered'}
+                }
+            raise
